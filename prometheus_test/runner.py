@@ -28,6 +28,7 @@ class TestConfig:
     workers_config: str = "workers.json"
     task_id: str = "test-task-123"
     base_port: int = 5000
+    middle_server_url: Optional[str] = None
     server_entrypoint: Optional[Path] = None
     max_rounds: Optional[int] = None  # Will be calculated from number of todos
     post_load_callback: Optional[Callable[[Any], None]] = (
@@ -59,9 +60,11 @@ class TestConfig:
         config["base_dir"] = base_dir
 
         # Convert relative paths to absolute
-        if "data_dir" in config:
+        if "data_dir" in config and not config["data_dir"].startswith("/"):
             config["data_dir"] = base_dir / config["data_dir"]
-        if "server_entrypoint" in config:
+        if "server_entrypoint" in config and not config["server_entrypoint"].startswith(
+            "/"
+        ):
             config["server_entrypoint"] = base_dir / config["server_entrypoint"]
 
         # Merge MongoDB config with defaults
