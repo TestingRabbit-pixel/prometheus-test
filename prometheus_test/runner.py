@@ -308,6 +308,8 @@ class TestRunner:
                 # Restore current round and step from state
                 self.current_round = self.state.get("current_round", 1)
                 self.last_completed_step = self.state.get("last_completed_step")
+            return True
+        return False
 
     def reset_state(self):
         """Clear the current state"""
@@ -349,8 +351,20 @@ class TestRunner:
 
     def run(self, force_reset=False):
         """Run the test sequence."""
-        # Ensure clean state before starting
-        self.ensure_clean_state(force_reset)
+        # Try to load existing state
+        has_state = self.load_state()
+
+        # Reset if:
+        # 1. --reset flag is used (force_reset)
+        # 2. No existing state file
+        # 3. State file exists but no steps completed yet
+        if force_reset or not has_state or not self.last_completed_step:
+            print("\nStarting fresh test run...")
+            self.ensure_clean_state(force_reset)
+        else:
+            print(
+                f"\nResuming from step {self.last_completed_step} in round {self.current_round}..."
+            )
 
         with self.run_environment():
             while self.current_round <= self.max_rounds:
