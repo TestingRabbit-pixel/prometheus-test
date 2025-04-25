@@ -336,7 +336,7 @@ class TestRunner:
         """Clear the current state"""
         self.state = {
             "rounds": {},
-            "current_round": self.current_round,
+            "current_round": 1,
         }
         self.last_completed_step = None
         state_file = self.config.data_dir / "test_state.json"
