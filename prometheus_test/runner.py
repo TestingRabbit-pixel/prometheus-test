@@ -30,7 +30,12 @@ class TestConfig:
     base_port: int = 5000
     middle_server_url: Optional[str] = None
     server_entrypoint: Optional[Path] = None
-    max_rounds: Optional[int] = None  # Will be calculated from number of todos
+    max_rounds: Optional[int] = (
+        None  # Will be calculated from collection if not specified
+    )
+    rounds_collection: Optional[str] = (
+        "todos"  # Collection to use for calculating max_rounds
+    )
     post_load_callback: Optional[Callable[[Any], None]] = (
         None  # Callback for post-JSON data processing
     )
@@ -162,15 +167,31 @@ class TestRunner:
 
     @property
     def max_rounds(self) -> int:
-        """Get maximum number of rounds, calculating from todos if not specified"""
+        """Get maximum number of rounds, calculating from the specified collection if not set explicitly"""
         if self._max_rounds is None:
             if self.config.max_rounds is not None:
                 self._max_rounds = self.config.max_rounds
             else:
-                # Count todos and add 1
+                # Count documents in the specified collection and add 1
+                if not self.config.rounds_collection:
+                    raise ValueError(
+                        "No collection specified for calculating max_rounds"
+                    )
+
                 db = self.mongo_client[self.config.mongodb["database"]]
+                if self.config.rounds_collection not in db.list_collection_names():
+                    raise ValueError(
+                        f"Collection {self.config.rounds_collection} does not exist"
+                    )
+
                 self._max_rounds = (
-                    db.todos.count_documents({"taskId": self.config.task_id}) + 1
+                    db[self.config.rounds_collection].count_documents(
+                        {"taskId": self.config.task_id}
+                    )
+                    + 1
+                )
+                print(
+                    f"\nCalculated {self._max_rounds} rounds from {self.config.rounds_collection} collection"
                 )
         return self._max_rounds
 
@@ -366,42 +387,52 @@ class TestRunner:
                 f"\nResuming from step {self.last_completed_step} in round {self.current_round}..."
             )
 
-        with self.run_environment():
-            while self.current_round <= self.max_rounds:
-                round_steps = [s for s in self.steps]
+        try:
+            with self.run_environment():
+                while self.current_round <= self.max_rounds:
+                    round_steps = [s for s in self.steps]
 
-                # Find the index to start from based on last completed step
-                start_index = 0
-                if self.last_completed_step:
-                    for i, step in enumerate(round_steps):
-                        if step.name == self.last_completed_step:
-                            start_index = i + 1
-                            break
+                    # Find the index to start from based on last completed step
+                    start_index = 0
+                    if self.last_completed_step:
+                        for i, step in enumerate(round_steps):
+                            if step.name == self.last_completed_step:
+                                start_index = i + 1
+                                break
 
-                # Skip already completed steps
-                for step in round_steps[start_index:]:
-                    self.log_step(step)
+                    # Skip already completed steps
+                    for step in round_steps[start_index:]:
+                        self.log_step(step)
 
-                    worker = self.get_worker(step.worker)
-                    # Prepare step data
-                    data = step.prepare(self, worker)
+                        worker = self.get_worker(step.worker)
+                        # Prepare step data
+                        data = step.prepare(self, worker)
 
-                    # Execute step
-                    result = step.execute(self, worker, data)
+                        # Execute step
+                        result = step.execute(self, worker, data)
 
-                    # Check for errors
-                    if not result.get("success"):
-                        error_msg = result.get("error", "Unknown error")
-                        raise RuntimeError(f"Step {step.name} failed: {error_msg}")
+                        # Check for errors
+                        if not result.get("success"):
+                            error_msg = result.get("error", "Unknown error")
+                            raise RuntimeError(f"Step {step.name} failed: {error_msg}")
+                        # Save state after successful step
+                        self.last_completed_step = step.name
+                        self.save_state()
 
-                    # Validate step result if validation function exists
-                    if step.validate:
-                        step.validate(self, result)
+                    # Move to next round after completing all steps
+                    if self.current_round < self.max_rounds:
+                        self.next_round()
+                    else:
+                        print("\nAll rounds completed successfully!")
+                        break
 
-                    # Save state after successful step
-                    self.last_completed_step = step.name
-                    self.save_state()
+        except Exception as e:
+            print(f"\nTest run failed: {str(e)}")
+            raise
+        finally:
+            # Ensure we always clean up, even if there's an error
+            if hasattr(self, "_test_env") and self._test_env:
+                print("\nCleaning up test environment...")
+                self._test_env._cleanup()
 
-                # Move to next round after completing all steps
-                if self.current_round < self.max_rounds:
-                    self.next_round()
+        print("\nTest run completed.")

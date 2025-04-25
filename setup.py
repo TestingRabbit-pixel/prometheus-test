@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="prometheus-test",
-    version="0.1.1",
+    version="0.1.2",
     description="Test framework for Prometheus tasks",
     author="Laura Abro",
     packages=find_packages(),
