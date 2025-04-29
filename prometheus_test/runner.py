@@ -149,11 +149,11 @@ class TestRunner:
         """Clear all existing data - databases and state"""
         print("\nClearing existing data...")
 
-        # Clear MongoDB collections
-        if self._mongo_client:
-            db = self._mongo_client[self._config.mongodb["database"]]
-            for collection in self._config.mongodb["collections"]:
-                db[collection].delete_many({})
+        # Initialize MongoDB client and clear collections
+        db = self.mongo_client[self._config.mongodb["database"]]
+        for collection in self._config.mongodb["collections"]:
+            print(f"Clearing collection: {collection}")
+            db[collection].delete_many({})
 
         # Clear local database files
         if self._test_env:
