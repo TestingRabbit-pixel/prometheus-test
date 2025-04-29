@@ -50,6 +50,7 @@ class TestConfig:
             },
         }
     )
+    custom: Dict[str, Any] = field(default_factory=dict)  # Store arbitrary config values
 
     @classmethod
     def from_yaml(
@@ -93,8 +94,16 @@ class TestConfig:
                             **mongodb_config["collections"][coll_name],
                         }
 
+        # Separate known fields from custom fields
+        known_fields = {k: v for k, v in config.items() if k in cls.__dataclass_fields__ and k != 'custom'}
+        custom_fields = {k: v for k, v in config.items() if k not in cls.__dataclass_fields__}
+
+        # Add custom fields to the config
+        if custom_fields:
+            known_fields['custom'] = custom_fields
+
         # Create instance with YAML values, falling back to defaults
-        return cls(**{k: v for k, v in config.items() if k in cls.__dataclass_fields__})
+        return cls(**known_fields)
 
     def __post_init__(self):
         # Convert string paths to Path objects
@@ -141,7 +150,8 @@ class TestRunner:
                 if hasattr(self.config, key):
                     setattr(self.config, key, value)
                 else:
-                    raise ValueError(f"Invalid config override: {key}")
+                    # Store unknown fields in custom dict
+                    self.config.custom[key] = value
 
         # Initialize state
         self.state = {}
@@ -369,6 +379,10 @@ class TestRunner:
             self.state["rounds"][str(self.current_round)] = {}
         self.state["current_round"] = self.current_round
         self.last_completed_step = None
+
+    def get_round_state(self):
+        """Get the state for the current round"""
+        return self.state["rounds"].get(str(self.current_round), {})
 
     def run(self, force_reset=False):
         """Run the test sequence."""
