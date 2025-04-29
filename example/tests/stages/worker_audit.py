@@ -2,8 +2,6 @@
 
 import requests
 
-# from prometheus_test.utils import create_signature
-
 
 def prepare(runner, worker, target_name):
     """Prepare data for worker audit"""
