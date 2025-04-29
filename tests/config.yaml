@@ -1,0 +1,16 @@
+# Test Configuration
+task_id: "test_task_001"
+base_port: 8000
+max_rounds: 3
+
+# Paths
+data_dir: data
+workers_config: workers.json
+
+# MongoDB Configuration
+mongodb:
+  database: test_db
+  collections:
+    test_collection:
+      data_file: test_data.json
+      required_count: 1 

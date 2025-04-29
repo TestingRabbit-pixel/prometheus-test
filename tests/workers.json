@@ -1,0 +1,23 @@
+{
+  "worker1": {
+    "port": 8001,
+    "env": {
+      "WORKER_ID": "worker1",
+      "TEST_ENV": "test_value"
+    },
+    "keypairs": {
+      "staking": "WORKER1_STAKING_KEYPAIR",
+      "public": "WORKER1_PUBLIC_KEYPAIR"
+    }
+  },
+  "worker2": {
+    "port": 8002,
+    "env": {
+      "WORKER_ID": "worker2"
+    },
+    "keypairs": {
+      "staking": "WORKER2_STAKING_KEYPAIR",
+      "public": "WORKER2_PUBLIC_KEYPAIR"
+    }
+  }
+} 

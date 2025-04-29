@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import threading
 from .utils import load_keypair
 import json
+import requests
 
 load_dotenv()
 
@@ -56,8 +57,8 @@ class Worker:
         # Environment setup
         self.env = os.environ.copy()
         # For each environment variable in env_vars, get its value from the environment
-        for key, env_var_name in env_vars.items():
-            self.env[key] = os.getenv(env_var_name)
+        for key, value in env_vars.items():
+            self.env[key] = value  # Use the value directly instead of looking it up
         self.env["DATABASE_PATH"] = str(self.database_path)
         self.env["PYTHONUNBUFFERED"] = "1"  # Always ensure unbuffered output
         self.env["PORT"] = str(self.port)  # Set the port for the server
@@ -124,6 +125,27 @@ class Worker:
             self.process.wait()
             self.process = None
 
+    def request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
+        """Make a request to the worker's server"""
+        url = f"{self.url}{endpoint}"
+        return requests.request(method, url, **kwargs)
+
+    def get(self, endpoint: str, **kwargs) -> requests.Response:
+        """Make a GET request to the worker's server"""
+        return self.request("GET", endpoint, **kwargs)
+
+    def post(self, endpoint: str, **kwargs) -> requests.Response:
+        """Make a POST request to the worker's server"""
+        return self.request("POST", endpoint, **kwargs)
+
+    def put(self, endpoint: str, **kwargs) -> requests.Response:
+        """Make a PUT request to the worker's server"""
+        return self.request("PUT", endpoint, **kwargs)
+
+    def delete(self, endpoint: str, **kwargs) -> requests.Response:
+        """Make a DELETE request to the worker's server"""
+        return self.request("DELETE", endpoint, **kwargs)
+
 
 class TestEnvironment:
     """Manages multiple workers for testing"""
@@ -157,7 +179,7 @@ class TestEnvironment:
                 name=name,
                 base_dir=base_dir,
                 port=base_port + i,
-                env_vars=config.get("env_vars", {}),
+                env_vars=config.get("env", {}),  # Changed from env_vars to env
                 keypairs=config.get("keypairs", {}),
                 server_entrypoint=server_entrypoint,
             )

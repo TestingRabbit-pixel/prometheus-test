@@ -7,9 +7,9 @@ from typing import Dict, Any, Tuple
 def load_keypair(keypair_path: str) -> Tuple[SigningKey, str]:
     """Load a keypair from file and return signing key and public key."""
     with open(keypair_path) as f:
-        keypair_bytes = bytes(json.load(f))
-        private_key = keypair_bytes[:32]
-        signing_key = SigningKey(private_key)
+        keypair = json.load(f)
+        private_key_bytes = base58.b58decode(keypair["private"])
+        signing_key = SigningKey(private_key_bytes)
         verify_key = signing_key.verify_key
         public_key = base58.b58encode(bytes(verify_key)).decode("utf-8")
         return signing_key, public_key
