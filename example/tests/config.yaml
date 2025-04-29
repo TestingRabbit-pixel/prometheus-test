@@ -1,10 +1,9 @@
 # Test Configuration
 task_id: "1111" # Task ID from config-task.yml
 middle_server_url: "http://localhost:3000"
-# collection used to determine the max_rounds, if the value is not directly set
-rounds_collection: "tasks"
-# base_port: 5000 # Base port for worker servers
 # max_rounds: 1 # Maximum number of test rounds
+rounds_collection: "tasks" # collection used to determine the max_rounds, if the value is not directly set
+# base_port: 5000 # Base port for worker servers, defaults to 5000. Additional workers will be assigned sequential ports.
 
 # Paths
 # relative to the test directory
@@ -15,8 +14,8 @@ data_dir: data/minimal # Directory containing test data
 mongodb:
   database: builder247
   collections:
-    tasks:
-      data_file: tasks.json
-      required_count: 1
+    tasks: # collection name
+      data_file: tasks.json # path to data file, relative to data_dir
+      required_count: 1 # minimum number of documents needed to run the test
     audits:
       required_count: 0 # No data file, just needs to exist

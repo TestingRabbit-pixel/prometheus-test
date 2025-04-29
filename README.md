@@ -254,3 +254,9 @@ Options:
 ## Resuming a Previous Test
 
 Test state is saved in data_dir/test_state.json. If you run the test without the `--reset` flag, this state file will be used to resume your progress. You can also manually edit the file to alter the point at which you resume, but do note you may have to also edit the local SQLite DB and/or the remote MongoDB instance (if using) in order to keep the state in sync.
+
+## TODO
+
+- verify all env variables at startup
+- automatically generate wallets for signing
+- More information about MongoDB setup
