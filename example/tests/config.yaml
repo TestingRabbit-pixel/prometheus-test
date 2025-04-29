@@ -2,7 +2,7 @@
 task_id: "1111" # Task ID from config-task.yml
 middle_server_url: "http://localhost:3000"
 # collection used to determine the max_rounds, if the value is not directly set
-rounds_collection: "documentations"
+rounds_collection: "tasks"
 # base_port: 5000 # Base port for worker servers
 # max_rounds: 1 # Maximum number of test rounds
 
@@ -15,8 +15,8 @@ data_dir: data/minimal # Directory containing test data
 mongodb:
   database: builder247
   collections:
-    documentations:
-      data_file: documentations.json
+    tasks:
+      data_file: tasks.json
       required_count: 1
     audits:
       required_count: 0 # No data file, just needs to exist

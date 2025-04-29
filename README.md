@@ -5,7 +5,7 @@
 ### Installation
 
 ```bash
-pip install -e test-framework/
+pip install prometheus_test
 ```
 
 ### Basic Structure
@@ -176,7 +176,7 @@ if __name__ == "__main__":
 
 ### 4. Post Load Callback
 
-If you're loading data from JSON files into MongoDB, you may need to do additional post processing (e.g. adding UUIDs). You can define a post load callback in `e2e.py` which will be automatically executed after the MongoDB collections have been populated.
+If you're loading data from JSON files into MongoDB, you may need to do additional post processing (e.g. adding UUIDs or a task ID). You can define a post load callback in `e2e.py` which will be automatically executed after the MongoDB collections have been populated.
 
 ```python
 def post_load_callback(db):
@@ -243,12 +243,13 @@ def execute(context, prepare_data):
 Execute your test script:
 
 ```bash
-python -m your_package.tests.e2e [--reset]
+cd <container_folder>
+python -m tests.e2e [--reset]
 ```
 
 Options:
 
-- `--reset`: Force reset of all databases before running tests
+- `--reset`: Force reset of all databases before running tests. Deleting the state file (data_dir/test_state.json) will also force a reset.
 
 ## Resuming a Previous Test
 

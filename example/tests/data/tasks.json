@@ -1,5 +1,7 @@
+// The structure of this is entirely dependent upon the DB schema and how your planner inserts data into MongoDB
 [
   {
+    "name": "Task",
     "description": "Do a task",
     "status": "initialized"
   }
