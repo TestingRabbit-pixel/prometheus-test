@@ -22,7 +22,7 @@ A test implementation consists of three main components:
 
 #### Directory Structure
 
-Below is the recommended file structure for creating your test:
+Below is the recommended file structure for creating your test. See the `example` folder for sample file contents.
 
 ```
 orca-container
