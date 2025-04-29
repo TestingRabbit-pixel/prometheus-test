@@ -50,7 +50,6 @@ class TestConfig:
             },
         }
     )
-    custom: Dict[str, Any] = field(default_factory=dict)  # Store arbitrary config values
 
     @classmethod
     def from_yaml(
@@ -94,15 +93,9 @@ class TestConfig:
                             **mongodb_config["collections"][coll_name],
                         }
 
-        # Separate known fields from custom fields
-        known_fields = {k: v for k, v in config.items() if k in cls.__dataclass_fields__ and k != 'custom'}
-        custom_fields = {k: v for k, v in config.items() if k not in cls.__dataclass_fields__}
+        # Extract known fields for the config class
+        known_fields = {k: v for k, v in config.items() if k in cls.__dataclass_fields__}
 
-        # Add custom fields to the config
-        if custom_fields:
-            known_fields['custom'] = custom_fields
-
-        # Create instance with YAML values, falling back to defaults
         return cls(**known_fields)
 
     def __post_init__(self):
@@ -142,29 +135,44 @@ class TestRunner:
     ):
         """Initialize test runner with steps and optional config"""
         self.steps = steps
-        self.config = TestConfig.from_yaml(config_file) if config_file else TestConfig()
-
-        # Apply any config overrides
-        if config_overrides:
-            for key, value in config_overrides.items():
-                if hasattr(self.config, key):
-                    setattr(self.config, key, value)
-                else:
-                    # Store unknown fields in custom dict
-                    self.config.custom[key] = value
+        self._config = TestConfig.from_yaml(config_file) if config_file else TestConfig()
 
         # Initialize state
-        self.state = {}
-        self.current_round = 1
+        self.state = {
+            "rounds": {},  # Round-specific state
+            "global": {},  # Global state (includes config)
+            "current_round": 1,
+        }
+
+        if config_file:
+            # Load all values from config file into global state
+            with open(config_file) as f:
+                yaml_config = yaml.safe_load(f) or {}
+                self.state["global"].update(yaml_config)
+
+        # Ensure core config values are set correctly
+        for field in self._config.__dataclass_fields__:
+            self.state["global"][field] = getattr(self._config, field)
+
+        # Apply any config overrides to global state
+        if config_overrides:
+            self.state["global"].update(config_overrides)
+
+        # Initialize other state
         self.last_completed_step = None
 
         # Ensure directories exist
-        self.config.data_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize test environment and MongoDB client
         self._test_env = None
         self._mongo_client = None
         self._max_rounds = None
+
+    @property
+    def data_dir(self) -> Path:
+        """Convenience property for data_dir access"""
+        return self.state["global"]["data_dir"]
 
     @property
     def mongo_client(self) -> MongoClient:
@@ -179,29 +187,29 @@ class TestRunner:
     def max_rounds(self) -> int:
         """Get maximum number of rounds, calculating from the specified collection if not set explicitly"""
         if self._max_rounds is None:
-            if self.config.max_rounds is not None:
-                self._max_rounds = self.config.max_rounds
+            if self._config.max_rounds is not None:
+                self._max_rounds = self._config.max_rounds
             else:
                 # Count documents in the specified collection and add 1
-                if not self.config.rounds_collection:
+                if not self._config.rounds_collection:
                     raise ValueError(
                         "No collection specified for calculating max_rounds"
                     )
 
-                db = self.mongo_client[self.config.mongodb["database"]]
-                if self.config.rounds_collection not in db.list_collection_names():
+                db = self.mongo_client[self._config.mongodb["database"]]
+                if self._config.rounds_collection not in db.list_collection_names():
                     raise ValueError(
-                        f"Collection {self.config.rounds_collection} does not exist"
+                        f"Collection {self._config.rounds_collection} does not exist"
                     )
 
                 self._max_rounds = (
-                    db[self.config.rounds_collection].count_documents(
-                        {"taskId": self.config.task_id}
+                    db[self._config.rounds_collection].count_documents(
+                        {"taskId": self._config.task_id}
                     )
                     + 1
                 )
                 print(
-                    f"\nCalculated {self._max_rounds} rounds from {self.config.rounds_collection} collection"
+                    f"\nCalculated {self._max_rounds} rounds from {self._config.rounds_collection} collection"
                 )
         return self._max_rounds
 
@@ -211,9 +219,9 @@ class TestRunner:
         Returns:
             bool: True if all collections exist and have required document counts
         """
-        db = self.mongo_client[self.config.mongodb["database"]]
+        db = self.mongo_client[self._config.mongodb["database"]]
 
-        for coll_name, coll_config in self.config.mongodb["collections"].items():
+        for coll_name, coll_config in self._config.mongodb["collections"].items():
             # Skip if collection doesn't exist and no documents required
             if coll_config.get("required_count", 0) == 0:
                 continue
@@ -223,7 +231,7 @@ class TestRunner:
                 print(f"Collection {coll_name} does not exist")
                 return False
 
-            count = db[coll_name].count_documents({"taskId": self.config.task_id})
+            count = db[coll_name].count_documents({"taskId": self._config.task_id})
             if count < coll_config["required_count"]:
                 print(
                     f"Collection {coll_name} has {count} documents, requires {coll_config['required_count']}"
@@ -245,19 +253,19 @@ class TestRunner:
         print("\nResetting MongoDB database...")
 
         # Connect to MongoDB
-        db = self.mongo_client[self.config.mongodb["database"]]
+        db = self.mongo_client[self._config.mongodb["database"]]
 
         # Clear collections
         print("\nClearing collections...")
-        for collection in self.config.mongodb["collections"]:
+        for collection in self._config.mongodb["collections"]:
             db[collection].delete_many({})
 
         # Import data files
-        for coll_name, coll_config in self.config.mongodb["collections"].items():
+        for coll_name, coll_config in self._config.mongodb["collections"].items():
             if "data_file" not in coll_config:
                 continue
 
-            data_file = self.config.data_dir / coll_config["data_file"]
+            data_file = self.data_dir / coll_config["data_file"]
             if not data_file.exists():
                 if coll_config.get("required_count", 0) > 0:
                     raise FileNotFoundError(
@@ -273,15 +281,15 @@ class TestRunner:
 
                 # Add task_id to all documents
                 for item in data:
-                    item["taskId"] = self.config.task_id
+                    item["taskId"] = self._config.task_id
 
                 # Insert data into collection
                 db[coll_name].insert_many(data)
 
         # Run post-load callback if provided
-        if self.config.post_load_callback:
+        if self._config.post_load_callback:
             print("\nRunning post-load data processing...")
-            self.config.post_load_callback(db)
+            self._config.post_load_callback(db)
 
         # Reset max_rounds cache after data import
         self._max_rounds = None
@@ -304,15 +312,15 @@ class TestRunner:
     def test_env(self) -> TestEnvironment:
         """Get the test environment, initializing if needed"""
         if self._test_env is None:
-            workers_config = Path(self.config.workers_config)
+            workers_config = Path(self._config.workers_config)
             if not workers_config.is_absolute():
-                workers_config = self.config.base_dir / workers_config
+                workers_config = self._config.base_dir / workers_config
 
             self._test_env = TestEnvironment(
                 config_file=workers_config,
-                base_dir=self.config.base_dir,
-                base_port=self.config.base_port,
-                server_entrypoint=self.config.server_entrypoint,
+                base_dir=self._config.base_dir,
+                base_port=self._config.base_port,
+                server_entrypoint=self._config.server_entrypoint,
             )
         return self._test_env
 
@@ -322,9 +330,9 @@ class TestRunner:
 
     def save_state(self):
         """Save current test state to file"""
-        state_file = self.config.data_dir / "test_state.json"
+        state_file = self.data_dir / "test_state.json"
         # Add current round and step to state before saving
-        self.state["current_round"] = self.current_round
+        self.state["current_round"] = self.state["current_round"]
         if self.last_completed_step:
             self.state["last_completed_step"] = self.last_completed_step
         with open(state_file, "w") as f:
@@ -332,13 +340,13 @@ class TestRunner:
 
     def load_state(self):
         """Load test state from file if it exists"""
-        state_file = self.config.data_dir / "test_state.json"
+        state_file = self.data_dir / "test_state.json"
         if state_file.exists():
             with open(state_file, "r") as f:
                 self.state = json.load(f)
                 # Restore current round and step from state
-                self.current_round = self.state.get("current_round", 1)
-                self.last_completed_step = self.state.get("last_completed_step")
+                self.set("current_round", self.state.get("current_round", 1), scope="execution")
+                self.set("last_completed_step", self.state.get("last_completed_step"), scope="execution")
             return True
         return False
 
@@ -348,8 +356,8 @@ class TestRunner:
             "rounds": {},
             "current_round": 1,
         }
-        self.last_completed_step = None
-        state_file = self.config.data_dir / "test_state.json"
+        self.set("last_completed_step", None, scope="execution")
+        state_file = self.data_dir / "test_state.json"
         if state_file.exists():
             state_file.unlink()
 
@@ -371,18 +379,106 @@ class TestRunner:
 
     def next_round(self):
         """Move to next round"""
-        self.current_round += 1
-        # Initialize state for new round if needed
-        if "rounds" not in self.state:
-            self.state["rounds"] = {}
-        if str(self.current_round) not in self.state["rounds"]:
-            self.state["rounds"][str(self.current_round)] = {}
-        self.state["current_round"] = self.current_round
-        self.last_completed_step = None
+        self.set("current_round", self.state["current_round"] + 1, scope="execution")
+        self.set("last_completed_step", None, scope="execution")
 
     def get_round_state(self):
         """Get the state for the current round"""
-        return self.state["rounds"].get(str(self.current_round), {})
+        return self.state["rounds"].get(str(self.state["current_round"]), {})
+
+    def get(self, key: str) -> Any:
+        """
+        Unified data access method. Automatically checks all data stores in priority order:
+        1. Current round state
+        2. Global state (includes config)
+        3. Execution state (current_round, last_completed_step)
+
+        Args:
+            key: The key to look up
+
+        Returns:
+            The value if found
+
+        Raises:
+            KeyError: If the key is not found in any scope
+        """
+        # Support nested key access with dot notation
+        parts = key.split('.')
+
+        # Check current round state first
+        round_state = self.get_round_state()
+        try:
+            value = round_state
+            for part in parts:
+                value = value[part]
+            return value
+        except (KeyError, TypeError):
+            pass
+
+        # Check global state (includes config)
+        try:
+            value = self.state["global"]
+            for part in parts:
+                value = value[part]
+            return value
+        except (KeyError, TypeError):
+            pass
+
+        # Check execution state
+        if key == "current_round":
+            return self.state["current_round"]
+        if key == "last_completed_step":
+            return self.last_completed_step
+
+        raise KeyError(f"Key '{key}' not found in any scope")
+
+    def set(self, key: str, value: Any, scope: str = "round") -> None:
+        """
+        Unified data setter. Stores data in the appropriate location based on scope.
+        Automatically creates any necessary nested dictionary structures.
+
+        Args:
+            key: The key to store. Can use dot notation for nested access (e.g. "pr_urls.worker1")
+            value: The value to store
+            scope: Where to store the data. Options:
+                - "round": Store in current round state (default)
+                - "global": Store in global state
+                - "execution": Store in execution state (only for specific variables)
+        """
+        # Handle nested keys with dot notation
+        parts = key.split('.')
+
+        if scope == "round":
+            # Ensure round state exists
+            round_key = str(self.state["current_round"])
+            if round_key not in self.state["rounds"]:
+                self.state["rounds"][round_key] = {}
+
+            # Navigate to the correct nested location
+            current = self.state["rounds"][round_key]
+            for part in parts[:-1]:
+                current = current.setdefault(part, {})
+            current[parts[-1]] = value
+
+        elif scope == "global":
+            # Navigate to the correct nested location
+            current = self.state["global"]
+            for part in parts[:-1]:
+                current = current.setdefault(part, {})
+            current[parts[-1]] = value
+
+        elif scope == "execution":
+            if key == "current_round":
+                self.state["current_round"] = value
+            elif key == "last_completed_step":
+                self.last_completed_step = value
+            else:
+                raise ValueError(f"Cannot set execution variable: {key}")
+        else:
+            raise ValueError(f"Invalid scope: {scope}")
+
+        # Save state after any modification
+        self.save_state()
 
     def run(self, force_reset=False):
         """Run the test sequence."""
@@ -393,24 +489,25 @@ class TestRunner:
         # 1. --reset flag is used (force_reset)
         # 2. No existing state file
         # 3. State file exists but no steps completed yet
-        if force_reset or not has_state or not self.last_completed_step:
+        if force_reset or not has_state or not self.get("last_completed_step"):
             print("\nStarting fresh test run...")
             self.ensure_clean_state(force_reset)
         else:
             print(
-                f"\nResuming from step {self.last_completed_step} in round {self.current_round}..."
+                f"\nResuming from step {self.get('last_completed_step')} in round {self.get('current_round')}..."
             )
 
         try:
             with self.run_environment():
-                while self.current_round <= self.max_rounds:
+                while self.get("current_round") <= self.max_rounds:
                     round_steps = [s for s in self.steps]
 
                     # Find the index to start from based on last completed step
                     start_index = 0
-                    if self.last_completed_step:
+                    last_step = self.get("last_completed_step")
+                    if last_step:
                         for i, step in enumerate(round_steps):
-                            if step.name == self.last_completed_step:
+                            if step.name == last_step:
                                 start_index = i + 1
                                 break
 
@@ -430,11 +527,10 @@ class TestRunner:
                             error_msg = result.get("error", "Unknown error")
                             raise RuntimeError(f"Step {step.name} failed: {error_msg}")
                         # Save state after successful step
-                        self.last_completed_step = step.name
-                        self.save_state()
+                        self.set("last_completed_step", step.name, scope="execution")
 
                     # Move to next round after completing all steps
-                    if self.current_round < self.max_rounds:
+                    if self.get("current_round") < self.max_rounds:
                         self.next_round()
                     else:
                         print("\nAll rounds completed successfully!")
