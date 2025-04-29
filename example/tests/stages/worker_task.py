@@ -16,7 +16,7 @@ def execute(runner, worker, data):
     """Execute worker task step"""
     if not data:
         return {"success": True, "message": "No repo url found"}
-    url = f"{worker.url}/worker-task/{runner.state['current_round']}"
+    url = f"{worker.url}/worker-task/{runner.get('current_round')}"
     response = requests.post(url, json=data)
     result = response.json()
 
@@ -29,6 +29,6 @@ def execute(runner, worker, data):
 
     if result.get("success") and "pr_url" in result["result"]["data"]:
         # Store PR URL in state
-        runner.set(f"pr_urls.{worker.name}", result["result"]["data"]["pr_url"])
+        runner.set(f"pr_urls.{worker.name}", result["result"]["data"]["pr_url"], scope="round")
 
     return result
