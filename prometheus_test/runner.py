@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, TypedDict
 import json
-from contextlib import contextmanager
 from pymongo import MongoClient
 from .workers import TestEnvironment
 import yaml
@@ -94,7 +93,9 @@ class TestConfig:
                         }
 
         # Extract known fields for the config class
-        known_fields = {k: v for k, v in config.items() if k in cls.__dataclass_fields__}
+        known_fields = {
+            k: v for k, v in config.items() if k in cls.__dataclass_fields__
+        }
 
         return cls(**known_fields)
 
@@ -135,44 +136,133 @@ class TestRunner:
     ):
         """Initialize test runner with steps and optional config"""
         self.steps = steps
-        self._config = TestConfig.from_yaml(config_file) if config_file else TestConfig()
+        self._config_file = config_file
+        self._config_overrides = config_overrides
 
-        # Initialize state
-        self.state = {
-            "rounds": {},  # Round-specific state
-            "global": {},  # Global state (includes config)
-            "current_round": 1,
-        }
-
-        if config_file:
-            # Load all values from config file into global state
-            with open(config_file) as f:
-                yaml_config = yaml.safe_load(f) or {}
-                self.state["global"].update(yaml_config)
-
-        # Ensure core config values are set correctly
-        for field in self._config.__dataclass_fields__:
-            self.state["global"][field] = getattr(self._config, field)
-
-        # Apply any config overrides to global state
-        if config_overrides:
-            self.state["global"].update(config_overrides)
-
-        # Initialize other state
-        self.last_completed_step = None
-
-        # Ensure directories exist
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-
-        # Initialize test environment and MongoDB client
+        # These will be initialized when needed
         self._test_env = None
         self._mongo_client = None
         self._max_rounds = None
+        self.state = None
+
+    def clear_data(self):
+        """Clear all existing data - databases and state"""
+        print("\nClearing existing data...")
+
+        # Clear MongoDB collections
+        if self._mongo_client:
+            db = self._mongo_client[self._config.mongodb["database"]]
+            for collection in self._config.mongodb["collections"]:
+                db[collection].delete_many({})
+
+        # Clear local database files
+        if self._test_env:
+            for worker in self._test_env.workers.values():
+                if worker.database_path.exists():
+                    print(f"Deleting database file: {worker.database_path}")
+                    worker.database_path.unlink()
+
+        # Initialize empty state
+        self.state = {
+            "rounds": {},
+            "global": {},
+            "current_round": 1,
+            "last_completed_step": None,
+        }
+
+    def load_data(self):
+        """Initialize state with config values and load any external data"""
+        print("\nLoading data from config files...")
+        print(f"Config base_dir: {self._config.base_dir}")
+
+        # Store config values in global state (except callables)
+        for f in self._config.__dataclass_fields__:
+            value = getattr(self._config, f)
+            if callable(value):
+                continue
+            # Convert Path objects to strings for JSON serialization
+            if isinstance(value, Path):
+                value = str(value)
+            self.state["global"][f] = value
+            if f == "base_dir":
+                print(f"Stored base_dir in state: {value}")
+
+        # Load and store worker config
+        workers_config = Path(self._config.workers_config)
+        if not workers_config.is_absolute():
+            workers_config = self._config.base_dir / workers_config
+
+        with open(workers_config) as f:
+            self.state["global"]["workers"] = json.load(f)
+
+        # Apply any config overrides
+        if self._config_overrides:
+            self.state["global"].update(self._config_overrides)
+            if "base_dir" in self._config_overrides:
+                print(f"Overrode base_dir with: {self._config_overrides['base_dir']}")
+
+        print(f"Final state base_dir: {self.get('base_dir')}")
+
+        # Import MongoDB data
+        print("\nImporting MongoDB data...")
+        db = self.mongo_client[self._config.mongodb["database"]]
+        for coll_name, coll_config in self._config.mongodb["collections"].items():
+            if "data_file" not in coll_config:
+                continue
+
+            data_file = self.data_dir / coll_config["data_file"]
+            if not data_file.exists():
+                if coll_config.get("required_count", 0) > 0:
+                    raise FileNotFoundError(
+                        f"Required data file not found: {data_file}"
+                    )
+                continue
+
+            print(f"Importing data for {coll_name} from {data_file}")
+            with open(data_file) as f:
+                data = json.load(f)
+                if not isinstance(data, list):
+                    data = [data]
+
+                # Add task_id to all documents
+                for item in data:
+                    item["taskId"] = self._config.task_id
+
+                # Insert data into collection
+                db[coll_name].insert_many(data)
+
+        # Run post-load callback if provided
+        if self._config.post_load_callback:
+            print("\nRunning post-load data processing...")
+            self._config.post_load_callback(db)
+
+        # Save state
+        self.save_state()
+
+    def _init_config(self):
+        """Initialize config from YAML file"""
+        if not hasattr(self, "_config"):
+            self._config = (
+                TestConfig.from_yaml(self._config_file)
+                if self._config_file
+                else TestConfig()
+            )
 
     @property
     def data_dir(self) -> Path:
-        """Convenience property for data_dir access"""
-        return self.state["global"]["data_dir"]
+        """Get the data directory path from config or state"""
+        # Initialize config if needed
+        if not hasattr(self, "_config"):
+            self._init_config()
+
+        # Try to get from state first
+        if self.state is not None:
+            data_dir = self.get("data_dir")
+            if data_dir is not None:
+                return Path(data_dir)
+
+        # Fall back to config
+        return self._config.data_dir
 
     @property
     def mongo_client(self) -> MongoClient:
@@ -213,114 +303,31 @@ class TestRunner:
                 )
         return self._max_rounds
 
-    def check_mongodb_state(self) -> bool:
-        """Check if MongoDB is in the expected state
-
-        Returns:
-            bool: True if all collections exist and have required document counts
-        """
-        db = self.mongo_client[self._config.mongodb["database"]]
-
-        for coll_name, coll_config in self._config.mongodb["collections"].items():
-            # Skip if collection doesn't exist and no documents required
-            if coll_config.get("required_count", 0) == 0:
-                continue
-
-            # Check if collection exists and has required documents
-            if coll_name not in db.list_collection_names():
-                print(f"Collection {coll_name} does not exist")
-                return False
-
-            count = db[coll_name].count_documents({"taskId": self._config.task_id})
-            if count < coll_config["required_count"]:
-                print(
-                    f"Collection {coll_name} has {count} documents, requires {coll_config['required_count']}"
-                )
-                return False
-
-        return True
-
-    def reset_local_databases(self):
-        """Reset all local database files"""
-        print("\nResetting local databases...")
-        for worker in self.test_env.workers.values():
-            if worker.database_path.exists():
-                print(f"Deleting database file: {worker.database_path}")
-                worker.database_path.unlink()
-
-    def reset_mongodb(self):
-        """Reset MongoDB database and import data files from config"""
-        print("\nResetting MongoDB database...")
-
-        # Connect to MongoDB
-        db = self.mongo_client[self._config.mongodb["database"]]
-
-        # Clear collections
-        print("\nClearing collections...")
-        for collection in self._config.mongodb["collections"]:
-            db[collection].delete_many({})
-
-        # Import data files
-        for coll_name, coll_config in self._config.mongodb["collections"].items():
-            if "data_file" not in coll_config:
-                continue
-
-            data_file = self.data_dir / coll_config["data_file"]
-            if not data_file.exists():
-                if coll_config.get("required_count", 0) > 0:
-                    raise FileNotFoundError(
-                        f"Required data file not found: {data_file}"
-                    )
-                continue
-
-            print(f"Importing data for {coll_name} from {data_file}")
-            with open(data_file) as f:
-                data = json.load(f)
-                if not isinstance(data, list):
-                    data = [data]
-
-                # Add task_id to all documents
-                for item in data:
-                    item["taskId"] = self._config.task_id
-
-                # Insert data into collection
-                db[coll_name].insert_many(data)
-
-        # Run post-load callback if provided
-        if self._config.post_load_callback:
-            print("\nRunning post-load data processing...")
-            self._config.post_load_callback(db)
-
-        # Reset max_rounds cache after data import
-        self._max_rounds = None
-
-    def ensure_clean_state(self, force_reset: bool = False):
-        """Ensure databases are in a clean state
-
-        Args:
-            force_reset: If True, always reset databases regardless of current state
-        """
-        needs_reset = force_reset or not self.check_mongodb_state()
-
-        if needs_reset:
-            print("\nResetting databases...")
-            self.reset_local_databases()
-            self.reset_mongodb()
-            self.reset_state()
-
     @property
     def test_env(self) -> TestEnvironment:
         """Get the test environment, initializing if needed"""
         if self._test_env is None:
-            workers_config = Path(self._config.workers_config)
-            if not workers_config.is_absolute():
-                workers_config = self._config.base_dir / workers_config
+            if self.state is None:
+                raise RuntimeError(
+                    "Cannot initialize test environment - state not loaded"
+                )
+
+            # Initialize test environment
+            base_dir = self.get("base_dir")
+            if base_dir is None:
+                raise RuntimeError(
+                    "Cannot initialize test environment - base_dir not set"
+                )
 
             self._test_env = TestEnvironment(
-                config_file=workers_config,
-                base_dir=self._config.base_dir,
-                base_port=self._config.base_port,
-                server_entrypoint=self._config.server_entrypoint,
+                worker_configs=self.get("workers"),
+                base_dir=Path(base_dir),
+                base_port=self.get("base_port"),
+                server_entrypoint=(
+                    Path(self.get("server_entrypoint"))
+                    if self.get("server_entrypoint")
+                    else None
+                ),
             )
         return self._test_env
 
@@ -331,10 +338,6 @@ class TestRunner:
     def save_state(self):
         """Save current test state to file"""
         state_file = self.data_dir / "test_state.json"
-        # Add current round and step to state before saving
-        self.state["current_round"] = self.state["current_round"]
-        if self.last_completed_step:
-            self.state["last_completed_step"] = self.last_completed_step
         with open(state_file, "w") as f:
             json.dump(self.state, f, indent=2)
 
@@ -344,38 +347,14 @@ class TestRunner:
         if state_file.exists():
             with open(state_file, "r") as f:
                 self.state = json.load(f)
-                # Restore current round and step from state
-                self.set("current_round", self.state.get("current_round", 1), scope="execution")
-                self.set("last_completed_step", self.state.get("last_completed_step"), scope="execution")
             return True
         return False
-
-    def reset_state(self):
-        """Clear the current state"""
-        self.state = {
-            "rounds": {},
-            "current_round": 1,
-        }
-        self.set("last_completed_step", None, scope="execution")
-        state_file = self.data_dir / "test_state.json"
-        if state_file.exists():
-            state_file.unlink()
 
     def log_step(self, step: TestStep):
         """Log test step execution"""
         print("\n" + "#" * 80)
         print(f"STEP {step.name}: {step.description}")
         print("#" * 80)
-
-    @contextmanager
-    def run_environment(self):
-        """Context manager for running the test environment"""
-        with self.test_env:
-            try:
-                self.load_state()
-                yield
-            finally:
-                self.save_state()
 
     def next_round(self):
         """Move to next round"""
@@ -386,51 +365,64 @@ class TestRunner:
         """Get the state for the current round"""
         return self.state["rounds"].get(str(self.state["current_round"]), {})
 
-    def get(self, key: str) -> Any:
+    def get(self, key: str) -> Optional[Any]:
         """
         Unified data access method. Automatically checks all data stores in priority order:
-        1. Current round state
-        2. Global state (includes config)
-        3. Execution state (current_round, last_completed_step)
+        1. Execution state (current_round, last_completed_step)
+        2. Current round state
+        3. Global state
 
         Args:
-            key: The key to look up
+            key: The key to look up. Can use dot notation for nested access.
 
         Returns:
-            The value if found
-
-        Raises:
-            KeyError: If the key is not found in any scope
+            The value if found, None if the key doesn't exist at any level or if the value is None
         """
         # Support nested key access with dot notation
-        parts = key.split('.')
+        parts = key.split(".")
 
-        # Check current round state first
+        # Check execution state first
+        if key in ["current_round", "last_completed_step"]:
+            return self.state.get(key)
+
+        # For simple keys, check each state level directly
+        if len(parts) == 1:
+            # Check current round state first
+            round_state = self.get_round_state()
+            if key in round_state:
+                return round_state[key]
+            # Then check global state
+            return self.state["global"].get(key)
+
+        # For nested keys, traverse the state
+        # Check current round state
         round_state = self.get_round_state()
         try:
             value = round_state
             for part in parts:
+                if not isinstance(value, dict):
+                    return None
+                if part not in value:
+                    return None
                 value = value[part]
             return value
-        except (KeyError, TypeError):
+        except (TypeError, AttributeError):
             pass
 
-        # Check global state (includes config)
+        # Check global state
         try:
             value = self.state["global"]
             for part in parts:
+                if not isinstance(value, dict):
+                    return None
+                if part not in value:
+                    return None
                 value = value[part]
             return value
-        except (KeyError, TypeError):
+        except (TypeError, AttributeError):
             pass
 
-        # Check execution state
-        if key == "current_round":
-            return self.state["current_round"]
-        if key == "last_completed_step":
-            return self.last_completed_step
-
-        raise KeyError(f"Key '{key}' not found in any scope")
+        return None
 
     def set(self, key: str, value: Any, scope: str = "round") -> None:
         """
@@ -446,7 +438,7 @@ class TestRunner:
                 - "execution": Store in execution state (only for specific variables)
         """
         # Handle nested keys with dot notation
-        parts = key.split('.')
+        parts = key.split(".")
 
         if scope == "round":
             # Ensure round state exists
@@ -468,10 +460,8 @@ class TestRunner:
             current[parts[-1]] = value
 
         elif scope == "execution":
-            if key == "current_round":
-                self.state["current_round"] = value
-            elif key == "last_completed_step":
-                self.last_completed_step = value
+            if key in ["current_round", "last_completed_step"]:
+                self.state[key] = value
             else:
                 raise ValueError(f"Cannot set execution variable: {key}")
         else:
@@ -482,29 +472,32 @@ class TestRunner:
 
     def run(self, force_reset=False):
         """Run the test sequence."""
-        # Try to load existing state
-        has_state = self.load_state()
+        # Always initialize config first
+        self._init_config()
+        state_file = self.data_dir / "test_state.json"
 
-        # Reset if:
-        # 1. --reset flag is used (force_reset)
-        # 2. No existing state file
-        # 3. State file exists but no steps completed yet
-        if force_reset or not has_state or not self.get("last_completed_step"):
+        # Either load existing state or create fresh state
+        if force_reset or not state_file.exists():
             print("\nStarting fresh test run...")
-            self.ensure_clean_state(force_reset)
+            self.clear_data()  # Initialize empty state
+            self.load_data()  # Populate state with config values and load external data
         else:
+            print("\nLoading existing state...")
+            if not self.load_state():
+                raise RuntimeError("Failed to load existing state")
             print(
-                f"\nResuming from step {self.get('last_completed_step')} in round {self.get('current_round')}..."
+                f"Resuming from step {self.state['last_completed_step']} in round {self.state['current_round']}..."
             )
 
         try:
-            with self.run_environment():
-                while self.get("current_round") <= self.max_rounds:
+            # Set up test environment
+            with self.test_env:
+                while self.state["current_round"] <= self.max_rounds:
                     round_steps = [s for s in self.steps]
 
                     # Find the index to start from based on last completed step
                     start_index = 0
-                    last_step = self.get("last_completed_step")
+                    last_step = self.state["last_completed_step"]
                     if last_step:
                         for i, step in enumerate(round_steps):
                             if step.name == last_step:
@@ -526,11 +519,13 @@ class TestRunner:
                         if not result.get("success"):
                             error_msg = result.get("error", "Unknown error")
                             raise RuntimeError(f"Step {step.name} failed: {error_msg}")
+
                         # Save state after successful step
-                        self.set("last_completed_step", step.name, scope="execution")
+                        self.state["last_completed_step"] = step.name
+                        self.save_state()
 
                     # Move to next round after completing all steps
-                    if self.get("current_round") < self.max_rounds:
+                    if self.state["current_round"] < self.max_rounds:
                         self.next_round()
                     else:
                         print("\nAll rounds completed successfully!")
