@@ -130,7 +130,7 @@ class TestEnvironment:
 
     def __init__(
         self,
-        config_file: Path,
+        worker_configs: Dict[str, dict],
         base_dir: Path,
         base_port: int = 5000,
         server_entrypoint: Optional[Path] = None,
@@ -144,10 +144,6 @@ class TestEnvironment:
                 raise FileNotFoundError(
                     f"Server entrypoint not found: {server_entrypoint}"
                 )
-
-        # Load worker configurations from file
-        with open(config_file) as f:
-            worker_configs = json.load(f)
 
         # Create workers
         self.workers: Dict[str, Worker] = {}
