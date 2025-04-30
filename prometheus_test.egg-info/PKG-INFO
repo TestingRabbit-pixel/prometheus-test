@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: prometheus-test
-Version: 0.1.5
+Version: 0.1.7
 Summary: Test framework for Prometheus tasks
 Author: Laura Abro
 Requires-Python: >=3.8
@@ -92,6 +92,7 @@ mongodb:
 {
   "worker1": {
     "port": 5001, // optional, will be automatically determined if not specified
+    "server_entrypoint": "/path/to/entrypoint.py" // The file used to start your server. Defaults to container_folder/main.py. Either an absolute path or relative to container_folder
 
     // this maps the env variable used by the server to the actual env variable defined in your .env file
     // for example, if every worker needs its own github token, the server variable will be just `GITHUB_TOKEN`
@@ -107,7 +108,7 @@ mongodb:
     // Specify the keypair paths in your .env file using the variable names you specify here.
     "keypairs": {
       "staking": "WORKER1_STAKING_KEYPAIR",
-      "public": "WORKER1_PUBLIC_KEYPAIR"
+      "main": "WORKER1_PUBLIC_KEYPAIR"
     }
   },
   "worker2": {
@@ -118,7 +119,7 @@ mongodb:
   }
       "keypairs": {
       "staking": "WORKER2_STAKING_KEYPAIR",
-      "public": "WORKER2_PUBLIC_KEYPAIR"
+      "main": "WORKER2_PUBLIC_KEYPAIR"
     }
 }
 ```
@@ -170,9 +171,11 @@ As each step corresponds to an API call, most of which are POST requests with a 
 
 Each function will have access to the test runner as well as the specific worker executing the step.
 
-Any 
-
 These two steps are by convention named `prepare` and `execute`.
+
+Runner variables can be set and accessed using runner.set("name", "value") and runner.get("name"). The set function additionally has an optional scope parameter that can be set to "global" (values that will not change throughout the test) and "round" (values that change from round to round). As most data you will store in the runner will be round-specific, the default scope is "round".
+
+Worker variables cannot be set at runtime, but anything you define in workers.json will be available via get_env("ENV_VAR_NAME"), get_key() (options are "staking_public", "staking_signing", "main_public", and "main_signing"), and get() for all other variables.
 
 1. Prepare Function:
 
@@ -208,7 +211,7 @@ def prepare(runner, worker):
 ```python
 def execute(runner, worker, data):
     """Execute the test step"""
-    response = requests.post(f"{worker.get('url')}/endpoint", json=data )
+    response = requests.post(f"{worker.get('url')}/endpoint", json=data)
     result = response.json()
 
     # Sometimes you'll have steps that don't always run, add skip conditions to keep the test running
@@ -220,7 +223,6 @@ def execute(runner, worker, data):
           raise Exception(
               f"Failed to execute step: {result.get('message')}"
           )
-      # the runner allows us to store information to be passed to later steps
       # you can use dot notation to store and retrieve nested values
       runner.set(f"post_urls.{worker.get('name')}", result["post_url"])
 ```
@@ -276,12 +278,6 @@ def post_load_callback(db):
 
 If you have an .env file in your agent's top level folder (for API keys, etc), those environment variables will be automatically loaded into your test script. If you want to add testing specific ENV variables or you need to override any values from you main .env, you can add a second .env in your tests/ directory, which will also be automatically loaded and overrides will be applied.
 
-## Test Data Management
-
-### Data Files
-
-Test data should be organized in JSON files within your data directory. Each file represents a collection's initial state. These files are then specified in your config.yaml (see above).
-
 ## Running Tests
 
 Execute your test script:
@@ -301,6 +297,5 @@ Test state is saved in data_dir/test_state.json. If you run the test without the
 
 ## TODO
 
-- verify all env variables at startup
 - automatically generate wallets for signing
 - More information about MongoDB setup

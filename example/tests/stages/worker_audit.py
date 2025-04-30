@@ -9,7 +9,7 @@ def prepare(runner, worker, target_name):
     pr_url = runner.get(f"pr_urls.{target_name}")
     if pr_url is None:
         print(
-            f"✓ No PR URL found for {target_name}, skipping {worker.name} audit - continuing"
+            f"✓ No PR URL found for {target_name}, skipping {worker.get('name')} audit - continuing"
         )
         return None
 
@@ -17,7 +17,7 @@ def prepare(runner, worker, target_name):
     submission_data = runner.get(f"submission_data.{target_name}")
     if submission_data is None:
         print(
-            f"✓ No submission data found for {target_name}, skipping {worker.name} audit - continuing"
+            f"✓ No submission data found for {target_name}, skipping {worker.get('name')} audit - continuing"
         )
         return None
 
@@ -33,7 +33,7 @@ def execute(runner, worker, data):
             "message": "Skipped due to missing PR URL or submission data",
         }
 
-    url = f"{worker.url}/worker-audit/{runner.get('current_round')}"
+    url = f"{worker.get('url')}/worker-audit/{runner.get('current_round')}"
     response = requests.post(url, json=data)
     result = response.json()
 

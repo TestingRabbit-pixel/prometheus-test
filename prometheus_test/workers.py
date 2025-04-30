@@ -33,7 +33,7 @@ class Worker:
             "port": default_port,
             "url": f"http://localhost:{default_port}",
             "database_path": str(base_dir / f"database_{name}.db"),
-            "server_entrypoint": str(base_dir / "main.py"),
+            "server_entrypoint": str(base_dir.parent / "main.py"),
         }
 
         # Add all config fields except env_vars and keypairs
