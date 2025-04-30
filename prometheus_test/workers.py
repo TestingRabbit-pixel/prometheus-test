@@ -19,55 +19,59 @@ class Worker:
         self,
         name: str,
         base_dir: Path,
-        port: int,
-        env_vars: Dict[str, str],
-        keypairs: Dict[str, str],
-        server_entrypoint: Optional[Path] = None,
-        **config,
+        default_port: int,
+        config: Dict[str, Any],
     ):
-        self.name = name
-        self.base_dir = base_dir
-        self.port = port
+        # Keep env_vars and keypairs as properties
+        self.env_vars = config.get("env_vars", {})
+        self.keypairs = config.get("keypairs", {})
 
-        # Initialize data storage with any additional config fields
+        # Initialize data storage with defaults
         self._data = {
-            k: v
-            for k, v in config.items()
-            if k not in ["env_vars", "keypairs", "server_entrypoint"]
+            "name": name,
+            "base_dir": str(base_dir),
+            "port": default_port,
+            "url": f"http://localhost:{self.get('port')}",
+            "database_path": str(base_dir / f"database_{name}.db"),
+            "server_entrypoint": str(base_dir / "main.py"),
         }
 
-        base_env = base_dir / ".env"  # Test framework base .env
-        if base_env.exists():
-            load_dotenv(base_env, override=True)  # Override any existing values
+        # Add all config fields except env_vars and keypairs
+        self._data.update(
+            {k: v for k, v in config.items() if k not in ["env_vars", "keypairs"]}
+        )
 
-        # Load keypairs using provided paths or environment variables
-        staking_keypair_path = os.getenv(
-            keypairs.get("staking"), f"{name.upper()}_STAKING_KEYPAIR"
-        )
-        public_keypair_path = os.getenv(
-            keypairs.get("public"), f"{name.upper()}_PUBLIC_KEYPAIR"
-        )
+        # Load environment variables
+        base_env = Path(self.get("base_dir")) / ".env"
+        if base_env.exists():
+            load_dotenv(base_env, override=True)
+
+        # Load keypairs
+        staking_keypair_path = os.getenv(self.keypairs.get("staking"))
+        main_keypair_path = os.getenv(self.keypairs.get("main"))
+
+        if not staking_keypair_path:
+            raise ValueError(
+                f"Missing staking keypair path - env var {self.keypairs.get('staking')} not set"
+            )
+        if not main_keypair_path:
+            raise ValueError(
+                f"Missing main keypair path - env var {self.keypairs.get('main')} not set"
+            )
 
         # Load keypairs
         self.staking_signing_key, self.staking_public_key = load_keypair(
             staking_keypair_path
         )
-        self.public_signing_key, self.public_key = load_keypair(public_keypair_path)
-
-        # Server configuration
-        self.url = f"http://localhost:{port}"
-        self.process = None
-        self.server_entrypoint = server_entrypoint
-        self.database_path = base_dir / f"database_{name}.db"
+        self.main_signing_key, self.main_public_key = load_keypair(main_keypair_path)
 
         # Environment setup
         self.env = os.environ.copy()
-        # For each environment variable in env_vars, get its value from the environment
-        for key, env_var_name in env_vars.items():
+        for key, env_var_name in self.env_vars.items():
             self.env[key] = os.getenv(env_var_name)
-        self.env["DATABASE_PATH"] = str(self.database_path)
-        self.env["PYTHONUNBUFFERED"] = "1"  # Always ensure unbuffered output
-        self.env["PORT"] = str(self.port)  # Set the port for the server
+        self.env["DATABASE_PATH"] = self.get("database_path")
+        self.env["PYTHONUNBUFFERED"] = "1"
+        self.env["PORT"] = str(self.get("port"))
 
     def _print_output(self, stream, prefix):
         """Print output from a stream with a prefix"""
@@ -77,14 +81,18 @@ class Worker:
 
     def start(self):
         """Start the worker's server"""
-        print(f"\nStarting {self.name} server on port {self.port}...")
+        print(f"\nStarting {self.get('name')} server on port {self.get('port')}...")
         sys.stdout.flush()
+
+        server_entrypoint = self.get("server_entrypoint")
+        if not server_entrypoint:
+            raise RuntimeError("Cannot start server - no server_entrypoint configured")
 
         # Start the process with unbuffered output
         self.process = subprocess.Popen(
-            [sys.executable, str(self.server_entrypoint)],
+            [sys.executable, server_entrypoint],
             env=self.env,
-            cwd=self.base_dir,
+            cwd=Path(self.get("base_dir")),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=1,
@@ -98,16 +106,18 @@ class Worker:
         if self.process.poll() is not None:
             _, stderr = self.process.communicate()
             error_msg = stderr.strip() if stderr else "No error output available"
-            raise RuntimeError(f"Failed to start {self.name} server:\n{error_msg}")
+            raise RuntimeError(
+                f"Failed to start {self.get('name')} server:\n{error_msg}"
+            )
 
         stdout_thread = threading.Thread(
             target=self._print_output,
-            args=(self.process.stdout, f"[{self.name}]"),
+            args=(self.process.stdout, f"[{self.get('name')}]"),
             daemon=True,
         )
         stderr_thread = threading.Thread(
             target=self._print_output,
-            args=(self.process.stderr, f"[{self.name} ERR]"),
+            args=(self.process.stderr, f"[{self.get('name')} ERR]"),
             daemon=True,
         )
         stdout_thread.start()
@@ -116,7 +126,7 @@ class Worker:
     def stop(self):
         """Stop the worker's server"""
         if self.process:
-            print(f"\nStopping {self.name} server...")
+            print(f"\nStopping {self.get('name')} server...")
             sys.stdout.flush()
 
             # Send SIGTERM first to allow graceful shutdown
@@ -142,24 +152,35 @@ class Worker:
         """
         return self.env.get(key)
 
-    def get_key(self, key_type: str = "public") -> str:
-        """Get a key value (public or signing key).
+    def get_key(self, key_type: str) -> str:
+        """Get a key value.
 
         Args:
-            key_type: Type of key to return, either "public" or "staking"
+            key_type: Type of key to return, one of:
+                     - "staking_public": The staking public key
+                     - "staking_signing": The staking signing/private key
+                     - "main_public": The main public key
+                     - "main_signing": The main signing/private key
 
         Returns:
-            The requested public key
+            The requested key
 
         Raises:
-            ValueError: If key_type is not "public" or "staking"
+            ValueError: If key_type is not one of the valid options
         """
-        if key_type == "public":
-            return self.public_key
-        elif key_type == "staking":
+        if key_type == "staking_public":
             return self.staking_public_key
+        elif key_type == "staking_signing":
+            return self.staking_signing_key
+        elif key_type == "main_public":
+            return self.main_public_key
+        elif key_type == "main_signing":
+            return self.main_signing_key
         else:
-            raise ValueError('key_type must be either "public" or "staking"')
+            raise ValueError(
+                'key_type must be one of: "staking_public", "staking_signing", '
+                '"main_public", "main_signing"'
+            )
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get an arbitrary stored value.
@@ -182,37 +203,17 @@ class TestEnvironment:
         worker_configs: Dict[str, dict],
         base_dir: Path,
         base_port: int = 5000,
-        server_entrypoint: Optional[Path] = None,
     ):
         self.base_dir = base_dir
-
-        # Set default startup script if not provided
-        if server_entrypoint is None:
-            server_entrypoint = base_dir.parent / "main.py"
-            if not server_entrypoint.exists():
-                raise FileNotFoundError(
-                    f"Server entrypoint not found: {server_entrypoint}"
-                )
+        self.workers: Dict[str, Worker] = {}
 
         # Create workers
-        self.workers: Dict[str, Worker] = {}
         for i, (name, config) in enumerate(worker_configs.items()):
-            # Extract special config fields
-            env_vars = config.get("env_vars", {})
-            keypairs = config.get("keypairs", {})
-
-            # Use port from config if specified, otherwise use base_port + index
-            port = config.get("port", base_port + i)
-
-            # Create worker with all config fields
             worker = Worker(
                 name=name,
                 base_dir=base_dir,
-                port=port,
-                env_vars=env_vars,
-                keypairs=keypairs,
-                server_entrypoint=server_entrypoint,
-                **config,  # Pass through all config fields
+                default_port=base_port + i,
+                config=config,
             )
             self.workers[name] = worker
 
