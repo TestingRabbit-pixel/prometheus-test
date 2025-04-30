@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: prometheus-test
-Version: 0.1.4
+Version: 0.1.5
 Summary: Test framework for Prometheus tasks
 Author: Laura Abro
 Requires-Python: >=3.8
@@ -125,6 +125,10 @@ mongodb:
 
 ### 2. Defining Test Steps
 
+#### Defining Step Sequence
+
+Orca tasks are fundamentally a series of API calls, either to the middle server or to your Orca container. In order to simulate the running of a task, we have the test runner execute a series of steps each round, with each step corresponding to an API call.
+
 Create a `steps.py` file to define your test sequence:
 
 ```python
@@ -160,6 +164,67 @@ from functools import partial
 
 ```
 
+#### Create Steps
+
+As each step corresponds to an API call, most of which are POST requests with a payload, each step has two stages: preparing the data to send, and making the call.
+
+Each function will have access to the test runner as well as the specific worker executing the step.
+
+Any 
+
+These two steps are by convention named `prepare` and `execute`.
+
+1. Prepare Function:
+
+```python
+from prometheus_test.utils import create_signature
+
+def prepare(runner, worker):
+    """Setup before step execution"""
+    # Any configuration values set in config.yaml will be available on the runner
+    #
+    task_id = runner.get("task_id")
+    twitter_username = worker.get("twitter_id")
+    twitter_password = worker.get_env("TWITTER_PASSWORD")
+
+    payload = {
+      "some_data": "I want to sign this"
+    }
+
+    # Setup prerequisites
+    return {
+        "task_id": task_id,
+        "twitter_username": twitter_username
+        "twitter_password": twitter_password
+        # the create_signature utility function will generate signatures that match
+        # the output of namespaceWrapper.payloadSigning
+        # https://www.koii.network/docs/develop/write-a-koii-task/namespace-wrapper/wallet-signatures
+        "signature": create_signature(worker.get_key("main_signing"), payload)
+    }
+```
+
+2. Execute Function:
+
+```python
+def execute(runner, worker, data):
+    """Execute the test step"""
+    response = requests.post(f"{worker.get('url')}/endpoint", json=data )
+    result = response.json()
+
+    # Sometimes you'll have steps that don't always run, add skip conditions to keep the test running
+
+      if response.status_code == 409:
+          print("Skipping step")
+          return
+      elif not result.get("success"):
+          raise Exception(
+              f"Failed to execute step: {result.get('message')}"
+          )
+      # the runner allows us to store information to be passed to later steps
+      # you can use dot notation to store and retrieve nested values
+      runner.set(f"post_urls.{worker.get('name')}", result["post_url"])
+```
+
 ### 3. Test Runner Script
 
 Create a main test script (e.g., `e2e.py`) that sets up and runs your test sequence:
@@ -193,6 +258,8 @@ if __name__ == "__main__":
     main()
 ```
 
+This is mostly boilerplate and can usually be used as-is.
+
 ### 4. Post Load Callback
 
 If you're loading data from JSON files into MongoDB, you may need to do additional post processing (e.g. adding UUIDs or a task ID). You can define a post load callback in `e2e.py` which will be automatically executed after the MongoDB collections have been populated.
@@ -214,48 +281,6 @@ If you have an .env file in your agent's top level folder (for API keys, etc), t
 ### Data Files
 
 Test data should be organized in JSON files within your data directory. Each file represents a collection's initial state. These files are then specified in your config.yaml (see above).
-
-## Writing Test Steps
-
-### Step Functions
-
-Each step requires two main functions:
-
-1. Prepare Function:
-
-```python
-def prepare(context):
-    """Setup before step execution"""
-    # Access configuration
-    task_id = context.config.task_id
-
-    # Setup prerequisites
-    return {
-        "key": "value"  # Data to pass to execute function
-    }
-```
-
-2. Execute Function:
-
-```python
-def execute(context, prepare_data):
-    """Execute the test step"""
-    # Access data from prepare
-    value = prepare_data["key"]
-
-    # Perform test operations, usually a call to the Flask server
-    result = some_operation()
-
-    # Sometimes you'll have steps that don't always run, add skip conditions to keep the test running
-      result = response.json()
-      if response.status_code == 409:
-          print("Skipping step")
-          return
-      elif not result.get("success"):
-          raise Exception(
-              f"Failed to execute step: {result.get('message')}"
-          )
-```
 
 ## Running Tests
 
