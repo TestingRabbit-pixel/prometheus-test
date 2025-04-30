@@ -193,7 +193,10 @@ class TestRunner:
             workers_config = self._config.base_dir / workers_config
 
         with open(workers_config) as f:
-            self.state["global"]["workers"] = json.load(f)
+            config = json.load(f)
+            print("\nLoading workers.json config:")
+            print(f"Config from file: {json.dumps(config, indent=2)}")
+            self.state["global"]["workers"] = config
 
         # Apply any config overrides
         if self._config_overrides:

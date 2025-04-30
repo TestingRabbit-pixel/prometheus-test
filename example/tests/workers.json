@@ -7,7 +7,9 @@
     "keypairs": {
       "staking": "WORKER1_STAKING_KEYPAIR",
       "main": "WORKER1_PUBLIC_KEYPAIR"
-    }
+    },
+    "port": 5002,
+    "server_entrypoint": "example/tests/stages/worker_task.py"
   },
   "worker2": {
     "env_vars": {
@@ -17,6 +19,8 @@
     "keypairs": {
       "staking": "WORKER2_STAKING_KEYPAIR",
       "main": "WORKER2_PUBLIC_KEYPAIR"
-    }
+    },
+    "port": 5003,
+    "server_entrypoint": "example/tests/stages/worker_task.py"
   }
 }

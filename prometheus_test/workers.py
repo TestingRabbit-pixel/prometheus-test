@@ -41,8 +41,9 @@ class Worker:
             {k: v for k, v in config.items() if k not in ["env_vars", "keypairs"]}
         )
 
-        # Validate server_entrypoint exists
         server_path = Path(self.get("server_entrypoint"))
+        if not server_path.is_absolute():
+            server_path = Path(self.get("base_dir")) / server_path
         if not server_path.exists():
             raise ValueError(f"Server entrypoint not found at {server_path}")
 
