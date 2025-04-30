@@ -31,7 +31,7 @@ class Worker:
             "name": name,
             "base_dir": str(base_dir),
             "port": default_port,
-            "url": f"http://localhost:{self.get('port')}",
+            "url": f"http://localhost:{default_port}",
             "database_path": str(base_dir / f"database_{name}.db"),
             "server_entrypoint": str(base_dir / "main.py"),
         }
@@ -41,29 +41,77 @@ class Worker:
             {k: v for k, v in config.items() if k not in ["env_vars", "keypairs"]}
         )
 
+        # Validate server_entrypoint exists
+        server_path = Path(self.get("server_entrypoint"))
+        if not server_path.exists():
+            raise ValueError(f"Server entrypoint not found at {server_path}")
+
         # Load environment variables
         base_env = Path(self.get("base_dir")) / ".env"
         if base_env.exists():
             load_dotenv(base_env, override=True)
 
-        # Load keypairs
-        staking_keypair_path = os.getenv(self.keypairs.get("staking"))
-        main_keypair_path = os.getenv(self.keypairs.get("main"))
-
-        if not staking_keypair_path:
+        # Validate environment variables
+        missing_env_vars = []
+        for key, env_var_name in self.env_vars.items():
+            if not os.getenv(env_var_name):
+                missing_env_vars.append(f"{key} ({env_var_name})")
+        if missing_env_vars:
             raise ValueError(
-                f"Missing staking keypair path - env var {self.keypairs.get('staking')} not set"
-            )
-        if not main_keypair_path:
-            raise ValueError(
-                f"Missing main keypair path - env var {self.keypairs.get('main')} not set"
+                f"Missing required environment variables for {name}: {', '.join(missing_env_vars)}"
             )
 
-        # Load keypairs
-        self.staking_signing_key, self.staking_public_key = load_keypair(
-            staking_keypair_path
-        )
-        self.main_signing_key, self.main_public_key = load_keypair(main_keypair_path)
+        # Load and validate keypairs
+        staking_keypair_env = self.keypairs.get("staking")
+        main_keypair_env = self.keypairs.get("main")
+
+        # Initialize keypair attributes as None
+        self.staking_signing_key = None
+        self.staking_public_key = None
+        self.main_signing_key = None
+        self.main_public_key = None
+
+        # Ensure at least one keypair is loaded if any were configured
+        if not staking_keypair_env and not main_keypair_env:
+            raise ValueError("At least one keypair must be provided")
+
+        # Load staking keypair if configured
+        if staking_keypair_env:
+            staking_keypair_path = os.getenv(staking_keypair_env)
+            if not staking_keypair_path:
+                raise ValueError(
+                    f"Missing staking keypair path - env var {staking_keypair_env} not set"
+                )
+            if not Path(staking_keypair_path).exists():
+                raise ValueError(
+                    f"Staking keypair file not found at {staking_keypair_path}"
+                )
+            try:
+                self.staking_signing_key, self.staking_public_key = load_keypair(
+                    staking_keypair_path
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to load staking keypair from {staking_keypair_path}: {str(e)}"
+                )
+
+        # Load main keypair if configured
+        if main_keypair_env:
+            main_keypair_path = os.getenv(main_keypair_env)
+            if not main_keypair_path:
+                raise ValueError(
+                    f"Missing main keypair path - env var {main_keypair_env} not set"
+                )
+            if not Path(main_keypair_path).exists():
+                raise ValueError(f"Main keypair file not found at {main_keypair_path}")
+            try:
+                self.main_signing_key, self.main_public_key = load_keypair(
+                    main_keypair_path
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to load main keypair from {main_keypair_path}: {str(e)}"
+                )
 
         # Environment setup
         self.env = os.environ.copy()
