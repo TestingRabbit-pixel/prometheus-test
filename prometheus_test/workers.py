@@ -4,11 +4,10 @@ import subprocess
 import time
 import signal
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from dotenv import load_dotenv
 import threading
 from .utils import load_keypair
-import json
 
 load_dotenv()
 
@@ -24,10 +23,18 @@ class Worker:
         env_vars: Dict[str, str],
         keypairs: Dict[str, str],
         server_entrypoint: Optional[Path] = None,
+        **config,
     ):
         self.name = name
         self.base_dir = base_dir
         self.port = port
+
+        # Initialize data storage with any additional config fields
+        self._data = {
+            k: v
+            for k, v in config.items()
+            if k not in ["env_vars", "keypairs", "server_entrypoint"]
+        }
 
         base_env = base_dir / ".env"  # Test framework base .env
         if base_env.exists():
@@ -124,6 +131,48 @@ class Worker:
             self.process.wait()
             self.process = None
 
+    def get_env(self, key: str) -> Optional[str]:
+        """Get an environment variable value.
+
+        Args:
+            key: The environment variable name to look up
+
+        Returns:
+            The environment variable value if found, None otherwise
+        """
+        return self.env.get(key)
+
+    def get_key(self, key_type: str = "public") -> str:
+        """Get a key value (public or signing key).
+
+        Args:
+            key_type: Type of key to return, either "public" or "staking"
+
+        Returns:
+            The requested public key
+
+        Raises:
+            ValueError: If key_type is not "public" or "staking"
+        """
+        if key_type == "public":
+            return self.public_key
+        elif key_type == "staking":
+            return self.staking_public_key
+        else:
+            raise ValueError('key_type must be either "public" or "staking"')
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get an arbitrary stored value.
+
+        Args:
+            key: The key to look up
+            default: Value to return if key is not found
+
+        Returns:
+            The stored value if found, default otherwise
+        """
+        return self._data.get(key, default)
+
 
 class TestEnvironment:
     """Manages multiple workers for testing"""
@@ -148,14 +197,22 @@ class TestEnvironment:
         # Create workers
         self.workers: Dict[str, Worker] = {}
         for i, (name, config) in enumerate(worker_configs.items()):
-            # Create worker with the new config structure
+            # Extract special config fields
+            env_vars = config.get("env_vars", {})
+            keypairs = config.get("keypairs", {})
+
+            # Use port from config if specified, otherwise use base_port + index
+            port = config.get("port", base_port + i)
+
+            # Create worker with all config fields
             worker = Worker(
                 name=name,
                 base_dir=base_dir,
-                port=base_port + i,
-                env_vars=config.get("env_vars", {}),
-                keypairs=config.get("keypairs", {}),
+                port=port,
+                env_vars=env_vars,
+                keypairs=keypairs,
                 server_entrypoint=server_entrypoint,
+                **config,  # Pass through all config fields
             )
             self.workers[name] = worker
 
