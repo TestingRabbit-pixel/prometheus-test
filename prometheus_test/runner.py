@@ -323,11 +323,6 @@ class TestRunner:
                 worker_configs=self.get("workers"),
                 base_dir=Path(base_dir),
                 base_port=self.get("base_port"),
-                server_entrypoint=(
-                    Path(self.get("server_entrypoint"))
-                    if self.get("server_entrypoint")
-                    else None
-                ),
             )
         return self._test_env
 
