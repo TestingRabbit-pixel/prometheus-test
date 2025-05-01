@@ -194,11 +194,14 @@ class TestRunner:
             config = json.load(f)
             self.state["global"]["workers"] = config
 
-        # Apply any config overrides
+        # Apply any config overrides, filtering out callables
         if self._config_overrides:
-            self.state["global"].update(self._config_overrides)
-            if "base_dir" in self._config_overrides:
-                print(f"Overrode base_dir with: {self._config_overrides['base_dir']}")
+            filtered_overrides = {
+                k: v for k, v in self._config_overrides.items() if not callable(v)
+            }
+            self.state["global"].update(filtered_overrides)
+            if "base_dir" in filtered_overrides:
+                print(f"Overrode base_dir with: {filtered_overrides['base_dir']}")
 
         # Import MongoDB data
         print("\nImporting MongoDB data...")
