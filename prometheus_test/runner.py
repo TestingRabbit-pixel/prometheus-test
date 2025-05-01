@@ -22,6 +22,7 @@ class MongoConfig(TypedDict, total=False):
 class TestConfig:
     """Configuration for the test runner"""
 
+    # Core configuration with defaults
     base_dir: Path = Path.cwd()
     data_dir: Optional[Path] = None
     workers_config: str = "workers.json"
@@ -38,6 +39,8 @@ class TestConfig:
     post_load_callback: Optional[Callable[[Any], None]] = (
         None  # Callback for post-JSON data processing
     )
+
+    # Default MongoDB configuration
     mongodb: MongoConfig = field(
         default_factory=lambda: {
             "database": "builder247",
@@ -49,6 +52,15 @@ class TestConfig:
             },
         }
     )
+
+    # Store arbitrary config values
+    _extra_config: Dict[str, Any] = field(default_factory=dict)
+
+    def __getattr__(self, name: str) -> Any:
+        """Allow access to arbitrary config values"""
+        if name in self._extra_config:
+            return self._extra_config[name]
+        raise AttributeError(f"'TestConfig' object has no attribute '{name}'")
 
     @classmethod
     def from_yaml(
@@ -92,12 +104,23 @@ class TestConfig:
                             **mongodb_config["collections"][coll_name],
                         }
 
-        # Extract known fields for the config class
-        known_fields = {
-            k: v for k, v in config.items() if k in cls.__dataclass_fields__
-        }
+        # Separate known fields from extra config
+        known_fields = {}
+        extra_fields = {}
 
-        return cls(**known_fields)
+        for k, v in config.items():
+            if k in cls.__dataclass_fields__:
+                known_fields[k] = v
+            else:
+                extra_fields[k] = v
+
+        # Create instance with known fields
+        instance = cls(**known_fields)
+
+        # Store extra fields
+        instance._extra_config = extra_fields
+
+        return instance
 
     def __post_init__(self):
         # Convert string paths to Path objects
@@ -175,8 +198,12 @@ class TestRunner:
 
         # Store config values in global state (except callables)
         for f in self._config.__dataclass_fields__:
+            if f == "_extra_config":  # Skip the internal extra config field
+                continue
             value = getattr(self._config, f)
+            # Skip storing callables in state, but don't skip the field entirely
             if callable(value):
+                self.state["global"][f] = None
                 continue
             # Convert Path objects to strings for JSON serialization
             if isinstance(value, Path):
@@ -184,6 +211,10 @@ class TestRunner:
             self.state["global"][f] = value
             if f == "base_dir":
                 print(f"Stored base_dir in state: {value}")
+
+        # Store extra config values
+        for k, v in self._config._extra_config.items():
+            self.state["global"][k] = v
 
         # Load and store worker config
         workers_config = Path(self._config.workers_config)
@@ -193,15 +224,6 @@ class TestRunner:
         with open(workers_config) as f:
             config = json.load(f)
             self.state["global"]["workers"] = config
-
-        # Apply any config overrides, filtering out callables
-        if self._config_overrides:
-            filtered_overrides = {
-                k: v for k, v in self._config_overrides.items() if not callable(v)
-            }
-            self.state["global"].update(filtered_overrides)
-            if "base_dir" in filtered_overrides:
-                print(f"Overrode base_dir with: {filtered_overrides['base_dir']}")
 
         # Import MongoDB data
         print("\nImporting MongoDB data...")
@@ -242,11 +264,18 @@ class TestRunner:
     def _init_config(self):
         """Initialize config from YAML file"""
         if not hasattr(self, "_config"):
+            # Create base config from YAML or defaults
             self._config = (
                 TestConfig.from_yaml(self._config_file)
                 if self._config_file
                 else TestConfig()
             )
+
+            # Apply any config overrides directly to the config object
+            if self._config_overrides:
+                for key, value in self._config_overrides.items():
+                    if hasattr(self._config, key):
+                        setattr(self._config, key, value)
 
     @property
     def data_dir(self) -> Path:
