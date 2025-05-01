@@ -6,7 +6,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="prometheus-test",
-    version="0.1.7",
+    version="0.1.8",
     description="Test framework for Prometheus tasks",
     author="Laura Abro",
     packages=find_packages(),
