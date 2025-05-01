@@ -69,7 +69,7 @@ class TestConfig:
         if "server_entrypoint" in config and not config["server_entrypoint"].startswith(
             "/"
         ):
-            config["server_entrypoint"] = base_dir / config["server_entrypoint"]
+            config["server_entrypoint"] = base_dir.parent / config["server_entrypoint"]
 
         # Merge MongoDB config with defaults
         if "mongodb" in config:

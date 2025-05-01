@@ -43,7 +43,7 @@ class Worker:
 
         server_path = Path(self.get("server_entrypoint"))
         if not server_path.is_absolute():
-            server_path = Path(self.get("base_dir")) / server_path
+            server_path = Path(self.get("base_dir")).parent / server_path
         if not server_path.exists():
             raise ValueError(f"Server entrypoint not found at {server_path}")
 
