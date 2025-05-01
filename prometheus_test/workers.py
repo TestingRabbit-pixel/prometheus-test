@@ -22,6 +22,9 @@ class Worker:
         default_port: int,
         config: Dict[str, Any],
     ):
+        # Initialize process attribute
+        self.process = None
+
         # Keep env_vars and keypairs as properties
         self.env_vars = config.get("env_vars", {})
         self.keypairs = config.get("keypairs", {})
