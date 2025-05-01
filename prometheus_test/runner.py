@@ -172,8 +172,6 @@ class TestRunner:
 
     def load_data(self):
         """Initialize state with config values and load any external data"""
-        print("\nLoading data from config files...")
-        print(f"Config base_dir: {self._config.base_dir}")
 
         # Store config values in global state (except callables)
         for f in self._config.__dataclass_fields__:
@@ -194,8 +192,6 @@ class TestRunner:
 
         with open(workers_config) as f:
             config = json.load(f)
-            print("\nLoading workers.json config:")
-            print(f"Config from file: {json.dumps(config, indent=2)}")
             self.state["global"]["workers"] = config
 
         # Apply any config overrides
@@ -203,8 +199,6 @@ class TestRunner:
             self.state["global"].update(self._config_overrides)
             if "base_dir" in self._config_overrides:
                 print(f"Overrode base_dir with: {self._config_overrides['base_dir']}")
-
-        print(f"Final state base_dir: {self.get('base_dir')}")
 
         # Import MongoDB data
         print("\nImporting MongoDB data...")
