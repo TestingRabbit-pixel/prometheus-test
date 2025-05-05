@@ -21,6 +21,7 @@ class Worker:
         base_dir: Path,
         default_port: int,
         config: Dict[str, Any],
+        data_dir: Optional[Path] = None,
     ):
         # Initialize process attribute
         self.process = None
@@ -35,7 +36,7 @@ class Worker:
             "base_dir": str(base_dir),
             "port": default_port,
             "url": f"http://localhost:{default_port}",
-            "database_path": str(base_dir / f"database_{name}.db"),
+            "database_path": str(data_dir / f"database_{name}.db"),
             "server_entrypoint": str(base_dir.parent / "main.py"),
         }
 
@@ -57,9 +58,13 @@ class Worker:
 
         # Validate environment variables
         missing_env_vars = []
-        for key, env_var_name in self.env_vars.items():
-            if not os.getenv(env_var_name):
-                missing_env_vars.append(f"{key} ({env_var_name})")
+        for key, value in self.env_vars.items():
+            # Skip DATA_DIR as it's handled specially
+            if key == "DATA_DIR":
+                continue
+            # If value doesn't exist as an env var, it's missing
+            if not os.getenv(value):
+                missing_env_vars.append(f"{key} ({value})")
         if missing_env_vars:
             raise ValueError(
                 f"Missing required environment variables for {name}: {', '.join(missing_env_vars)}"
@@ -119,8 +124,13 @@ class Worker:
 
         # Environment setup
         self.env = os.environ.copy()
-        for key, env_var_name in self.env_vars.items():
-            self.env[key] = os.getenv(env_var_name)
+        for key, value in self.env_vars.items():
+            # For DATA_DIR, use the value directly
+            if key == "DATA_DIR":
+                self.env[key] = value
+            else:
+                # For other vars, get from environment
+                self.env[key] = os.getenv(value)
         self.env["DATABASE_PATH"] = self.get("database_path")
         self.env["PYTHONUNBUFFERED"] = "1"
         self.env["PORT"] = str(self.get("port"))
@@ -255,6 +265,7 @@ class TestEnvironment:
         worker_configs: Dict[str, dict],
         base_dir: Path,
         base_port: int = 5000,
+        data_dir: Optional[Path] = None,
     ):
         self.base_dir = base_dir
         self.workers: Dict[str, Worker] = {}
@@ -266,6 +277,7 @@ class TestEnvironment:
                 base_dir=base_dir,
                 default_port=base_port + i,
                 config=config,
+                data_dir=data_dir,
             )
             self.workers[name] = worker
 

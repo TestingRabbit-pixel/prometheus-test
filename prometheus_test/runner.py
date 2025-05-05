@@ -44,12 +44,7 @@ class TestConfig:
     mongodb: MongoConfig = field(
         default_factory=lambda: {
             "database": "builder247",
-            "collections": {
-                "issues": {"required_count": 1},
-                "todos": {"required_count": 1},
-                "systemprompts": {"required_count": 0},
-                "audits": {"required_count": 0},
-            },
+            "collections": {},  # No default collections, use only what's in config.yaml
         }
     )
 
@@ -178,12 +173,12 @@ class TestRunner:
             print(f"Clearing collection: {collection}")
             db[collection].delete_many({})
 
-        # Clear local database files
-        if self._test_env:
-            for worker in self._test_env.workers.values():
-                if worker.database_path.exists():
-                    print(f"Deleting database file: {worker.database_path}")
-                    worker.database_path.unlink()
+        # Delete all SQLite database files in data_dir
+        print("\nClearing database files...")
+        if self.data_dir.exists():
+            for db_file in self.data_dir.glob("*.db"):
+                print(f"Deleting database file: {db_file}")
+                db_file.unlink()
 
         # Initialize empty state
         self.state = {
@@ -352,6 +347,7 @@ class TestRunner:
                 worker_configs=self.get("workers"),
                 base_dir=Path(base_dir),
                 base_port=self.get("base_port"),
+                data_dir=self.data_dir,  # Pass data_dir to TestEnvironment
             )
         return self._test_env
 
