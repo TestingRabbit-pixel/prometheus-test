@@ -111,13 +111,17 @@ class HistoricalPriceTransformer:
                 if datetime.fromisoformat(point['datetime']) <= end_date
             ]
         
-        if min_price is not None:
+        if min_price is not None and max_price is not None:
+            filtered_data = [
+                point for point in filtered_data 
+                if min_price <= point['price'] <= max_price
+            ]
+        elif min_price is not None:
             filtered_data = [
                 point for point in filtered_data 
                 if point['price'] >= min_price
             ]
-        
-        if max_price is not None:
+        elif max_price is not None:
             filtered_data = [
                 point for point in filtered_data 
                 if point['price'] <= max_price
