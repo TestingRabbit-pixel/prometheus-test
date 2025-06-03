@@ -23,7 +23,7 @@ def test_missing_required_keys():
     ]
     
     for config in invalid_configs:
-        with pytest.raises(ConfigValidationError, match="Missing required configuration key"):
+        with pytest.raises(ConfigValidationError, match="Missing or invalid required configuration key"):
             CoinGeckoConfigValidator.validate_config(config)
 
 def test_invalid_url_format():
@@ -39,7 +39,7 @@ def test_invalid_url_format():
         with pytest.raises(ConfigValidationError, match="Invalid URL format"):
             CoinGeckoConfigValidator.validate_config({
                 'API_BASE_URL': url,
-                'API_KEY': 'test_key'
+                'API_KEY': 'test_key_valid_length'
             })
 
 def test_api_key_validation():
@@ -51,7 +51,7 @@ def test_api_key_validation():
     ]
     
     for key in invalid_keys:
-        with pytest.raises(ConfigValidationError, match="API key is too short"):
+        with pytest.raises(ConfigValidationError, match="Invalid API key: Key is too short"):
             CoinGeckoConfigValidator.validate_config({
                 'API_BASE_URL': 'https://api.coingecko.com/api/v3',
                 'API_KEY': key
@@ -71,7 +71,7 @@ def test_timeout_validation():
         with pytest.raises(ConfigValidationError, match="Invalid timeout value"):
             CoinGeckoConfigValidator.validate_config({
                 'API_BASE_URL': 'https://api.coingecko.com/api/v3',
-                'API_KEY': 'test_key',
+                'API_KEY': 'test_key_valid_length',
                 'REQUEST_TIMEOUT': timeout
             })
 
@@ -89,20 +89,20 @@ def test_rate_limit_validation():
         with pytest.raises(ConfigValidationError, match="Invalid rate limit value"):
             CoinGeckoConfigValidator.validate_config({
                 'API_BASE_URL': 'https://api.coingecko.com/api/v3',
-                'API_KEY': 'test_key',
+                'API_KEY': 'test_key_valid_length',
                 'RATE_LIMIT': rate_limit
             })
 
 def test_env_config_loading(monkeypatch):
     """Test loading configuration from environment variables."""
     monkeypatch.setenv('COINGECKO_API_BASE_URL', 'https://custom-api.coingecko.com')
-    monkeypatch.setenv('COINGECKO_API_KEY', 'test_env_key')
+    monkeypatch.setenv('COINGECKO_API_KEY', 'test_env_key_12345')
     monkeypatch.setenv('COINGECKO_REQUEST_TIMEOUT', '45')
     monkeypatch.setenv('COINGECKO_RATE_LIMIT', '75')
     
     config = CoinGeckoConfigValidator.load_from_env()
     
     assert config['API_BASE_URL'] == 'https://custom-api.coingecko.com'
-    assert config['API_KEY'] == 'test_env_key'
+    assert config['API_KEY'] == 'test_env_key_12345'
     assert config['REQUEST_TIMEOUT'] == 45
     assert config['RATE_LIMIT'] == 75
