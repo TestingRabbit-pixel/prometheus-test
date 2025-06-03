@@ -29,7 +29,7 @@ class CoinGeckoConfigValidator:
         # Validate presence of required keys
         required_keys = ['API_BASE_URL', 'API_KEY']
         for key in required_keys:
-            if key not in config or not config[key]:
+            if key not in config or config[key] is None or str(config[key]).strip() == '':
                 raise ConfigValidationError(f"Missing or invalid required configuration key: {key}")
         
         # Validate API base URL format
@@ -86,7 +86,7 @@ class CoinGeckoConfigValidator:
             ConfigValidationError: If API key is invalid
         """
         # Remove whitespace and validate minimum length
-        sanitized_key = api_key.strip()
+        sanitized_key = str(api_key).strip()
         if len(sanitized_key) < 10:
             raise ConfigValidationError("Invalid API key: Key is too short")
 
