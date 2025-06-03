@@ -1,6 +1,6 @@
 import os
 import pytest
-from src.config import CoinGeckoConfig
+from src.config import CoinGeckoConfig, InvalidConfigurationError
 
 def test_default_configuration():
     config = CoinGeckoConfig()
@@ -38,12 +38,16 @@ def test_configuration_validation():
     assert config.validate() is True
     
     # Invalid timeout
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidConfigurationError):
         CoinGeckoConfig(timeout=-1)
     
     # Invalid max retries
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidConfigurationError):
         CoinGeckoConfig(max_retries=-1)
+    
+    # Invalid base URL
+    with pytest.raises(InvalidConfigurationError):
+        CoinGeckoConfig(api_base_url='')
 
 def test_config_get_config():
     config = CoinGeckoConfig(api_key='test_key')
