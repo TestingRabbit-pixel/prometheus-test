@@ -1,6 +1,7 @@
 import os
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+import re
 
 class InvalidConfigurationError(ValueError):
     """Custom exception for invalid configuration."""
@@ -84,8 +85,20 @@ class CoinGeckoConfig:
             InvalidConfigurationError: If configuration is invalid
         """
         # Validate API base URL
-        if not self.api_base_url or not isinstance(self.api_base_url, str):
-            raise InvalidConfigurationError("Invalid or empty API base URL")
+        if not isinstance(self.api_base_url, str):
+            raise InvalidConfigurationError("API base URL must be a string")
+        
+        # Use regex to validate URL structure
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'  # domain
+            r'localhost|'  # localhost
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # or IP
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+        
+        if not url_pattern.match(self.api_base_url):
+            raise InvalidConfigurationError("Invalid API base URL format")
         
         # Validate timeout
         if not isinstance(self.timeout, int) or self.timeout <= 0:
