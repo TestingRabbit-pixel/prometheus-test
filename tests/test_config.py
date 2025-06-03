@@ -45,7 +45,7 @@ def test_configuration_validation():
     with pytest.raises(InvalidConfigurationError):
         CoinGeckoConfig(max_retries=-1)
     
-    # Invalid base URL
+    # Invalid base URL - empty string
     with pytest.raises(InvalidConfigurationError):
         CoinGeckoConfig(api_base_url='')
 
