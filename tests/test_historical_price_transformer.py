@@ -66,6 +66,10 @@ def test_filter_historical_data():
         min_price=29250, 
         max_price=30000
     )
+    
+    # Debug print
+    print("Filtered by price:", [point['price'] for point in filtered_by_price])
+    
     assert len(filtered_by_price) == 2
     assert all(29250 <= point['price'] <= 30000 for point in filtered_by_price)
 
