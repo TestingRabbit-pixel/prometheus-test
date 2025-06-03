@@ -28,29 +28,30 @@ class APILogger:
         self.logger = logging.getLogger(name)
         self.logger.setLevel(log_level)
         
-        # Prevent adding multiple handlers
-        if not self.logger.handlers:
-            # Console handler
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(log_level)
-            console_format = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
-            console_handler.setFormatter(console_format)
-            self.logger.addHandler(console_handler)
+        # Clear existing handlers to prevent duplicates
+        self.logger.handlers.clear()
+        
+        # Console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_format = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        console_handler.setFormatter(console_format)
+        self.logger.addHandler(console_handler)
+        
+        # File handler (optional)
+        if log_file:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(log_file) or '.', exist_ok=True)
             
-            # File handler (optional)
-            if log_file:
-                # Ensure directory exists
-                os.makedirs(os.path.dirname(log_file), exist_ok=True)
-                
-                file_handler = logging.FileHandler(log_file)
-                file_handler.setLevel(log_level)
-                file_format = logging.Formatter(
-                    '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
-                )
-                file_handler.setFormatter(file_format)
-                self.logger.addHandler(file_handler)
+            file_handler = logging.FileHandler(log_file, mode='a')
+            file_handler.setLevel(log_level)
+            file_format = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+            )
+            file_handler.setFormatter(file_format)
+            self.logger.addHandler(file_handler)
     
     def debug(self, message: str):
         """Log a debug message."""
