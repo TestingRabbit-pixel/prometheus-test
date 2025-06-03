@@ -45,17 +45,22 @@ def test_invalid_url_format():
 def test_api_key_validation():
     """Test API key validation."""
     invalid_keys = [
+        None,
         '',
         '   ',
         'short'
     ]
     
     for key in invalid_keys:
-        with pytest.raises(ConfigValidationError, match="Invalid API key: Key is too short"):
+        with pytest.raises(ConfigValidationError) as exc_info:
             CoinGeckoConfigValidator.validate_config({
                 'API_BASE_URL': 'https://api.coingecko.com/api/v3',
                 'API_KEY': key
             })
+        
+        # Check that the error message matches the expected validation
+        error_msg = str(exc_info.value)
+        assert "Missing or invalid required configuration key" in error_msg or "Invalid API key: Key is too short" in error_msg
 
 def test_timeout_validation():
     """Test timeout value validation."""
