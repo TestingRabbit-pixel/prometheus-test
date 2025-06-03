@@ -60,8 +60,7 @@ class CoinGeckoConfig:
         )
         
         # Validate configuration during initialization
-        if not self.validate():
-            raise InvalidConfigurationError("Invalid configuration parameters")
+        self._validate()
     
     def get_config(self) -> Dict[str, Any]:
         """
@@ -77,26 +76,34 @@ class CoinGeckoConfig:
             'max_retries': self.max_retries
         }
     
-    def validate(self) -> bool:
+    def _validate(self) -> None:
         """
         Validate the current configuration.
-        
-        Returns:
-            bool: Whether the configuration is valid
         
         Raises:
             InvalidConfigurationError: If configuration is invalid
         """
         # Validate API base URL
         if not self.api_base_url or not isinstance(self.api_base_url, str):
-            return False
+            raise InvalidConfigurationError("Invalid or empty API base URL")
         
         # Validate timeout
         if not isinstance(self.timeout, int) or self.timeout <= 0:
-            return False
+            raise InvalidConfigurationError("Timeout must be a positive integer")
         
         # Validate max retries
         if not isinstance(self.max_retries, int) or self.max_retries < 0:
-            return False
+            raise InvalidConfigurationError("Max retries must be a non-negative integer")
+    
+    def validate(self) -> bool:
+        """
+        Check if configuration is valid.
         
-        return True
+        Returns:
+            bool: Whether the configuration is valid
+        """
+        try:
+            self._validate()
+            return True
+        except InvalidConfigurationError:
+            return False
