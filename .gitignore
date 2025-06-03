@@ -1,48 +1,48 @@
-.venv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environments
 .env
-__pycache__
-.pytest_cache
-.pypirc
-*.db
-test
-test_state.json
-task_flow.egg-info
-example_repo
-signature.js
-git-filter-repo
-task/orca/
-**/dist/
-# yarn.lock
-package-lock.json
-node_modules
-build
-migrate.sh
-*/dev.js
-executables/*
-namespace/*
-config/*
-.env.local
-taskStateInfoKeypair.json
-localKOIIDB.db
-metadata.json
-.npmrc
-*.pem
-.vscode
-.cursor
-data/chunks
-data/process
-test_state.csv
-todos-example.csv
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Ignore auto-generated repository directories
-repos/
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-
-# Ignore Data
-data/*
-
-
-venv
-
-**/venv/
+# Miscellaneous
+.DS_Store
