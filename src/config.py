@@ -2,6 +2,10 @@ import os
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 
+class InvalidConfigurationError(ValueError):
+    """Custom exception for invalid configuration."""
+    pass
+
 class CoinGeckoConfig:
     """
     Configuration management for CoinGecko API client.
@@ -27,6 +31,9 @@ class CoinGeckoConfig:
             api_key (Optional[str]): API key for authentication
             timeout (Optional[int]): Request timeout in seconds
             max_retries (Optional[int]): Maximum number of request retries
+        
+        Raises:
+            InvalidConfigurationError: If configuration parameters are invalid
         """
         # Load .env file if it exists
         load_dotenv()
@@ -51,6 +58,10 @@ class CoinGeckoConfig:
             max_retries or 
             int(os.getenv('COINGECKO_MAX_RETRIES', 3))
         )
+        
+        # Validate configuration during initialization
+        if not self.validate():
+            raise InvalidConfigurationError("Invalid configuration parameters")
     
     def get_config(self) -> Dict[str, Any]:
         """
@@ -72,14 +83,20 @@ class CoinGeckoConfig:
         
         Returns:
             bool: Whether the configuration is valid
+        
+        Raises:
+            InvalidConfigurationError: If configuration is invalid
         """
+        # Validate API base URL
         if not self.api_base_url or not isinstance(self.api_base_url, str):
             return False
         
-        if self.timeout <= 0:
+        # Validate timeout
+        if not isinstance(self.timeout, int) or self.timeout <= 0:
             return False
         
-        if self.max_retries < 0:
+        # Validate max retries
+        if not isinstance(self.max_retries, int) or self.max_retries < 0:
             return False
         
         return True
