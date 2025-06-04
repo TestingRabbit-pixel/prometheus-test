@@ -1,5 +1,11 @@
 import time
 import pytest
+import sys
+import os
+
+# Add project root to python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from src.retry import retry, RetryError
 
 def test_retry_successful_function():
