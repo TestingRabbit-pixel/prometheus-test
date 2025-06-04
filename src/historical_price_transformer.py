@@ -89,42 +89,31 @@ class HistoricalPriceTransformer:
         
         Args:
             data (List[Dict[str, Union[int, float]]]): Transformed historical price data
-            start_date (Optional[datetime]): Minimum date for filtering (exclusive)
-            end_date (Optional[datetime]): Maximum date for filtering (exclusive)
+            start_date (Optional[datetime]): Minimum date for filtering
+            end_date (Optional[datetime]): Maximum date for filtering
             min_price (Optional[float]): Minimum price for filtering
             max_price (Optional[float]): Maximum price for filtering
         
         Returns:
             List[Dict[str, Union[int, float]]]: Filtered historical price data
         """
-        filtered_data = data.copy()
+        def meets_filter_criteria(point):
+            point_datetime = datetime.fromisoformat(point['datetime'])
+            
+            # Check date range
+            if start_date and point_datetime < start_date:
+                return False
+            
+            if end_date and point_datetime > end_date:
+                return False
+            
+            # Check price range
+            if min_price is not None and point['price'] < min_price:
+                return False
+            
+            if max_price is not None and point['price'] > max_price:
+                return False
+            
+            return True
         
-        if start_date:
-            filtered_data = [
-                point for point in filtered_data 
-                if datetime.fromisoformat(point['datetime']) > start_date
-            ]
-        
-        if end_date:
-            filtered_data = [
-                point for point in filtered_data 
-                if datetime.fromisoformat(point['datetime']) < end_date
-            ]
-        
-        if min_price is not None and max_price is not None:
-            filtered_data = [
-                point for point in filtered_data 
-                if min_price <= point['price'] <= max_price
-            ]
-        elif min_price is not None:
-            filtered_data = [
-                point for point in filtered_data 
-                if point['price'] >= min_price
-            ]
-        elif max_price is not None:
-            filtered_data = [
-                point for point in filtered_data 
-                if point['price'] <= max_price
-            ]
-        
-        return filtered_data
+        return [point for point in data if meets_filter_criteria(point)]
