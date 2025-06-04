@@ -89,8 +89,8 @@ class HistoricalPriceTransformer:
         
         Args:
             data (List[Dict[str, Union[int, float]]]): Transformed historical price data
-            start_date (Optional[datetime]): Minimum date for filtering
-            end_date (Optional[datetime]): Maximum date for filtering
+            start_date (Optional[datetime]): Minimum date for filtering (exclusive)
+            end_date (Optional[datetime]): Maximum date for filtering (exclusive)
             min_price (Optional[float]): Minimum price for filtering
             max_price (Optional[float]): Maximum price for filtering
         
@@ -102,13 +102,13 @@ class HistoricalPriceTransformer:
         if start_date:
             filtered_data = [
                 point for point in filtered_data 
-                if datetime.fromisoformat(point['datetime']) >= start_date
+                if datetime.fromisoformat(point['datetime']) > start_date
             ]
         
         if end_date:
             filtered_data = [
                 point for point in filtered_data 
-                if datetime.fromisoformat(point['datetime']) <= end_date
+                if datetime.fromisoformat(point['datetime']) < end_date
             ]
         
         if min_price is not None and max_price is not None:
