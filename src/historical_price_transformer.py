@@ -89,8 +89,8 @@ class HistoricalPriceTransformer:
         
         Args:
             data (List[Dict[str, Union[int, float]]]): Transformed historical price data
-            start_date (Optional[datetime]): Minimum date for filtering
-            end_date (Optional[datetime]): Maximum date for filtering
+            start_date (Optional[datetime]): Minimum date for filtering (exclusive)
+            end_date (Optional[datetime]): Maximum date for filtering (exclusive)
             min_price (Optional[float]): Minimum price for filtering
             max_price (Optional[float]): Maximum price for filtering
         
@@ -100,11 +100,11 @@ class HistoricalPriceTransformer:
         def meets_filter_criteria(point):
             point_datetime = datetime.fromisoformat(point['datetime'])
             
-            # Check date range
-            if start_date and point_datetime < start_date:
+            # Check date range (strict inequality)
+            if start_date and point_datetime <= start_date:
                 return False
             
-            if end_date and point_datetime > end_date:
+            if end_date and point_datetime >= end_date:
                 return False
             
             # Check price range
