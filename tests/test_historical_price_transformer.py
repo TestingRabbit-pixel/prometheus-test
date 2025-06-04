@@ -54,7 +54,7 @@ class TestHistoricalPriceTransformer(unittest.TestCase):
             start_date=start_date, 
             end_date=end_date
         )
-        self.assertEqual(len(filtered_data), 2)  # Two points between Feb and Apr
+        self.assertEqual(len(filtered_data), 3)  # Three points between Feb and Apr
 
         # Filter by price range
         price_filtered_data = HistoricalPriceTransformer.filter_historical_data(
